@@ -1,17 +1,19 @@
-// @ts-nocheck
-
 import { GM_download, GM_xmlhttpRequest } from 'vite-plugin-monkey/dist/client';
 
 export const U = {
-  qs: (s, r = document) => r.querySelector(s),
-  ce: (t, props = {}, attrs = {}) => {
+  qs: (s: string, r: Document | Element = document): Element | null => r.querySelector(s),
+  ce: <K extends keyof HTMLElementTagNameMap>(
+    t: K,
+    props: Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { style?: string | Partial<CSSStyleDeclaration> } = {},
+    attrs: Record<string, string> = {}
+  ): HTMLElementTagNameMap[K] => {
     const el = document.createElement(t);
     Object.assign(el, props);
     for (const k in attrs) el.setAttribute(k, attrs[k]);
     return el;
   },
-  sanitize: (s) => (s || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80),
-  isInlinePointer: (p) => {
+  sanitize: (s: string): string => (s || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80),
+  isInlinePointer: (p: string): boolean => {
     if (!p) return false;
     const prefixes = [
       'https://cdn.oaistatic.com/',
@@ -19,15 +21,15 @@ export const U = {
     ];
     return prefixes.some((x) => p.startsWith(x));
   },
-  pointerToFileId: (p) => {
+  pointerToFileId: (p: string): string => {
     if (!p) return '';
     if (U.isInlinePointer(p)) return p; // already a CDN URL
     const m = p.match(/file[-_][0-9a-f]+/i);
     return m ? m[0] : p;
   },
-  fileExtFromMime: (mime) => {
+  fileExtFromMime: (mime: string): string => {
     if (!mime) return '';
-    const map = {
+    const map: Record<string, string> = {
       'image/png': '.png',
       'image/jpeg': '.jpg',
       'image/webp': '.webp',
@@ -40,7 +42,7 @@ export const U = {
     if (mime.includes('/')) return `.${mime.split('/')[1]}`;
     return '';
   },
-  formatBytes: (n) => {
+  formatBytes: (n: number | null | undefined): string => {
     if (!n || isNaN(n)) return '';
     const units = ['B', 'KB', 'MB', 'GB'];
     let v = n;
@@ -51,27 +53,27 @@ export const U = {
     }
     return `${v.toFixed(v >= 10 || v % 1 === 0 ? 0 : 1)}${units[i]}`;
   },
-  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  sleep: (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)),
   // 支持 /c/xxx 和 /g/yyy/c/xxx 两种路径
-  convId: () => {
+  convId: (): string => {
     const p = location.pathname;
     let m = p.match(/^\/c\/([0-9a-f-]+)$/i);
     if (m) return m[1];
     m = p.match(/^\/g\/[^/]+\/c\/([0-9a-f-]+)$/i);
     return m ? m[1] : '';
   },
-  projectId: () => {
+  projectId: (): string => {
     const p = location.pathname;
     const m = p.match(/^\/g\/([^/]+)\/c\/[0-9a-f-]+$/i);
     return m ? m[1] : '';
   },
-  isHostOK: () => location.host.endsWith('chatgpt.com') || location.host.endsWith('chat.openai.com'),
+  isHostOK: (): boolean => location.host.endsWith('chatgpt.com') || location.host.endsWith('chat.openai.com'),
 };
 
 export const BATCH_CONCURRENCY = 4;
 export const LIST_PAGE_SIZE = 50;
 
-export function saveBlob(blob, filename) {
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = U.ce('a', { href: url });
   a.download = filename;
@@ -81,32 +83,32 @@ export function saveBlob(blob, filename) {
   a.remove();
 }
 
-export function saveJSON(obj, filename) {
+export function saveJSON(obj: any, filename: string): void {
   const blob = new Blob([JSON.stringify(obj, null, 2)], {
     type: 'application/json',
   });
   saveBlob(blob, filename);
 }
 
-export function gmDownload(url, filename) {
+export function gmDownload(url: string, filename: string): Promise<void> {
   return new Promise((resolve, reject) => {
     GM_download({
       url,
       name: filename || '',
-      onload: resolve,
-      onerror: reject,
-      ontimeout: reject,
+      onload: () => resolve(),
+      onerror: (err) => reject(err),
+      ontimeout: () => reject(new Error('timeout')),
     });
   });
 }
 
-export function parseMimeFromHeaders(raw) {
+export function parseMimeFromHeaders(raw: string): string {
   if (!raw) return '';
   const m = raw.match(/content-type:\s*([^\r\n;]+)/i);
   return m ? m[1].trim() : '';
 }
 
-export function gmFetchBlob(url, headers) {
+export function gmFetchBlob(url: string, headers?: Record<string, string>): Promise<{ blob: Blob; mime: string }> {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
       url,
@@ -126,9 +128,10 @@ export function gmFetchBlob(url, headers) {
 
 const HAS_EXT_RE = /\.[^./\\]+$/;
 
-export function inferFilename(name, fallbackId, mime) {
+export function inferFilename(name: string, fallbackId: string, mime: string): string {
   const base = U.sanitize(name || '') || U.sanitize(fallbackId || '') || 'untitled';
   const ext = U.fileExtFromMime(mime || '');
   if (!ext || HAS_EXT_RE.test(base)) return base;
   return `${base}${ext}`;
 }
+
