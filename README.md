@@ -48,23 +48,6 @@ pnpm build
 - 文本中的 `{{file:xxx}}` 占位符与 `sandbox:` 链接。
 - 直接可下载的 CDN 指针（如 oaidalleapiprodscus、cdn.oaistatic）。
 
-## 目录结构速览
-- `src/main.ts`：脚本入口，挂载 UI。
-- `src/ui.ts`：悬浮按钮、弹窗和交互逻辑。
-- `src/cred.ts`：凭证获取与调试信息。
-- `src/api.ts`：会话、沙盒、文件下载元数据请求。
-- `src/files.ts`：从会话数据中提取候选文件/图片。
-- `src/downloads.ts`：文件与指针的下载实现（含 sandbox）。
-- `src/conversations.ts`：会话列表收集、批量拉取。
-- `src/batchExport.ts`：批量导出 ZIP、summary.json 生成。
-- `vite.config.ts`：vite + vite-plugin-monkey 配置。
-
-## 常见问题与提示
-- 必须在已登录的 chatgpt.com / chat.openai.com 页面使用，否则无法获取 accessToken。
-- 项目/助手会话需在对应项目路径下访问，以便带上 `chatgpt-project-id` 头部。
-- 如果某些文件下载失败，可在控制台查看具体报错，summary.json 也会记录失败项。
-- Deep Research 报告（docx/pdf）导出暂未实现。
-
 ## TODOs
 - [x] Uploaded attachments
 - [x] Sandbox
@@ -74,6 +57,4 @@ pnpm build
 - [ ] Deep Research Report Export (docx, pdf)
 - [x] Voice Mode
 - [x] 以上功能在项目中的实现
-
-## 授权
-本仓库未声明许可证，使用和分发前请先与作者确认。
+- [ ] 项目中用户上传的文件
