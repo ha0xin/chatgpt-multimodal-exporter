@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "jszip": "^3.10.1",
+    "jszip": "3.9.1",
     "preact": "^10.28.0"
   },
   "devDependencies": {
