@@ -10,7 +10,7 @@ export const U = {
     for (const k in attrs) el.setAttribute(k, attrs[k]);
     return el;
   },
-  sanitize: (s) => (s || 'untitled').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80),
+  sanitize: (s) => (s || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80),
   isInlinePointer: (p) => {
     if (!p) return false;
     const prefixes = [
@@ -127,7 +127,7 @@ export function gmFetchBlob(url, headers) {
 const HAS_EXT_RE = /\.[^./\\]+$/;
 
 export function inferFilename(name, fallbackId, mime) {
-  const base = U.sanitize(name || '') || U.sanitize(fallbackId || '') || 'file';
+  const base = U.sanitize(name || '') || U.sanitize(fallbackId || '') || 'untitled';
   const ext = U.fileExtFromMime(mime || '');
   if (!ext || HAS_EXT_RE.test(base)) return base;
   return `${base}${ext}`;
