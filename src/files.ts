@@ -1,13 +1,12 @@
-// @ts-nocheck
-
 import { U } from './utils';
+import { Conversation, FileCandidate, Message } from './types';
 
-export function collectFileCandidates(conv) {
+export function collectFileCandidates(conv: Conversation): FileCandidate[] {
   const mapping = (conv && conv.mapping) || {};
-  const out = new Map();
+  const out = new Map<string, FileCandidate>();
   const convId = conv?.conversation_id || '';
 
-  const add = (fileId, info) => {
+  const add = (fileId: string, info: Partial<FileCandidate>) => {
     if (!fileId) return;
     if (out.has(fileId)) return;
     out.set(fileId, { file_id: fileId, conversation_id: convId, ...info });
@@ -16,7 +15,7 @@ export function collectFileCandidates(conv) {
   for (const key in mapping) {
     const node = mapping[key];
     if (!node || !node.message) continue;
-    const msg = node.message;
+    const msg = node.message as Message;
     const meta = msg.metadata || {};
     const c = msg.content || {};
 
@@ -85,15 +84,15 @@ export function collectFileCandidates(conv) {
   return [...out.values()];
 }
 
-export function extractImages(conv) {
+export function extractImages(conv: Conversation): FileCandidate[] {
   const mapping = conv && conv.mapping ? conv.mapping : {};
-  const images = [];
-  const seen = new Set();
+  const images: FileCandidate[] = [];
+  const seen = new Set<string>();
 
   for (const key in mapping) {
     const node = mapping[key];
     if (!node || !node.message) continue;
-    const msg = node.message;
+    const msg = node.message as Message;
     const role = msg.author && msg.author.role;
     const msgId = msg.id;
 
@@ -109,7 +108,7 @@ export function extractImages(conv) {
           file_id: fileId,
           name: att.name || '',
           mime_type: att.mime_type || '',
-          size_bytes: att.size || att.size_bytes || null,
+          size_bytes: att.size || att.size_bytes || undefined,
           message_id: msgId,
           role,
           source: 'upload',
@@ -147,3 +146,4 @@ export function extractImages(conv) {
   console.log('[ChatGPT-Multimodal-Exporter] 找到的图片信息：', images);
   return images;
 }
+

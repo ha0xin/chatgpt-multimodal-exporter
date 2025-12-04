@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { Cred } from './cred';
 import { fetchConversation } from './api';
 import { collectAllConversationTasks } from './conversations';
@@ -7,6 +5,7 @@ import { collectFileCandidates, extractImages } from './files';
 import { downloadSelectedFiles } from './downloads';
 import { runBatchExport } from './batchExport';
 import { BATCH_CONCURRENCY, U, saveBlob, saveJSON } from './utils';
+import { Conversation, FileCandidate, Project, Task } from './types';
 
 function showBatchExportDialog() {
   const overlay = U.ce('div', { className: 'cgptx-modal' });
@@ -59,14 +58,19 @@ function showBatchExportDialog() {
     if (e.target === overlay) close();
   });
 
-  let listData = null;
-  const selectedSet = new Set();
-  let itemCheckboxes = [];
-  let groupStates = [];
-  const collapsed = new Map();
+  let listData: { rootIds: string[]; roots: any[]; projects: Project[] } | null = null;
+  const selectedSet = new Set<string>();
+  let itemCheckboxes: HTMLInputElement[] = [];
+  let groupStates: {
+    projectId: string | null;
+    items: { id: string; title: string }[];
+    headerCb: HTMLInputElement;
+    listEl: HTMLElement;
+  }[] = [];
+  const collapsed = new Map<string | null, boolean>();
   const cancelRef = { cancel: false };
-  const makeKey = (projectId, id) => `${projectId || 'root'}::${id}`;
-  const parseKey = (key) => {
+  const makeKey = (projectId: string | null, id: string) => `${projectId || 'root'}::${id}`;
+  const parseKey = (key: string): Task => {
     const idx = key.indexOf('::');
     const pid = key.slice(0, idx);
     const id = key.slice(idx + 2);
@@ -83,10 +87,10 @@ function showBatchExportDialog() {
     });
   };
 
-  const setStatus = (txt) => {
+  const setStatus = (txt: string) => {
     status.textContent = txt;
   };
-  const setProgress = (pct, txt) => {
+  const setProgress = (pct: number, txt?: string) => {
     if (pct === 0 && !txt) {
       progWrap.style.display = 'none';
       return;
@@ -96,39 +100,39 @@ function showBatchExportDialog() {
     progLabel.textContent = `${txt || ''} ${pct ? `(${pct}%)` : ''}`;
   };
 
-  const getRootsList = (data) => {
+  const getRootsList = (data: any) => {
     if (data && Array.isArray(data.roots) && data.roots.length) return data.roots;
     if (data && Array.isArray(data.rootIds) && data.rootIds.length)
-      return data.rootIds.map((id) => ({ id, title: id }));
+      return data.rootIds.map((id: string) => ({ id, title: id }));
     return [];
   };
 
-  const seedSelection = (data) => {
+  const seedSelection = (data: any) => {
     selectedSet.clear();
-    getRootsList(data).forEach((it) => selectedSet.add(makeKey('', it.id)));
-    (data.projects || []).forEach((p) => {
+    getRootsList(data).forEach((it: any) => selectedSet.add(makeKey(null, it.id)));
+    (data.projects || []).forEach((p: Project) => {
       (p.convs || []).forEach((c) => selectedSet.add(makeKey(p.projectId, c.id)));
     });
   };
 
-  const collectAllKeys = (data) => {
-    const keys = [];
-    getRootsList(data).forEach((it) => keys.push(makeKey('', it.id)));
-    (data.projects || []).forEach((p) => {
+  const collectAllKeys = (data: any) => {
+    const keys: string[] = [];
+    getRootsList(data).forEach((it: any) => keys.push(makeKey(null, it.id)));
+    (data.projects || []).forEach((p: Project) => {
       (p.convs || []).forEach((c) => keys.push(makeKey(p.projectId, c.id)));
     });
     return keys;
   };
 
-  const renderList = (data) => {
+  const renderList = (data: any) => {
     listWrap.innerHTML = '';
     itemCheckboxes = [];
     groupStates = [];
 
-    const groups = [];
+    const groups: { label: string; projectId: string | null; items: any[] }[] = [];
     const rootsList = getRootsList(data);
-    if (rootsList.length) groups.push({ label: '无项目（个人会话）', projectId: '', items: rootsList });
-    (data.projects || []).forEach((p) => {
+    if (rootsList.length) groups.push({ label: '无项目（个人会话）', projectId: null, items: rootsList });
+    (data.projects || []).forEach((p: Project) => {
       const convs = Array.isArray(p.convs) ? p.convs : [];
       groups.push({
         label: p.projectName || p.projectId || '未命名项目',
@@ -137,9 +141,7 @@ function showBatchExportDialog() {
       });
     });
 
-
-
-    const addGroup = (label, projectId, items) => {
+    const addGroup = (label: string, projectId: string | null, items: any[]) => {
       const groupWrap = U.ce('div', { className: 'cgptx-group' });
       const header = U.ce('div', { className: 'cgptx-group-header' });
       const arrow = U.ce('span', { className: 'cgptx-arrow', textContent: collapsed.get(projectId) ? '▶' : '▼' });
@@ -181,7 +183,7 @@ function showBatchExportDialog() {
           keys.forEach((k) => selectedSet.add(k));
         }
         list.querySelectorAll('input[type="checkbox"]').forEach((c) => {
-          c.checked = cb.checked;
+          (c as HTMLInputElement).checked = cb.checked;
         });
         refreshGroupHeaders();
         setStatus(`已选 ${selectedSet.size} 条`);
@@ -195,9 +197,10 @@ function showBatchExportDialog() {
           type: 'checkbox',
           checked,
           defaultChecked: checked,
-          'data-id': it.id,
-          'data-project': projectId || '',
         });
+        itemCb.dataset.id = it.id;
+        itemCb.dataset.project = projectId || '';
+
         itemCb.addEventListener('change', () => {
           if (itemCb.checked) selectedSet.add(key);
           else selectedSet.delete(key);
@@ -251,12 +254,12 @@ function showBatchExportDialog() {
     btnToggle.disabled = true;
     setStatus('准备导出…');
 
-    const progressCb = (pct, txt) => setProgress(pct, txt || '');
+    const progressCb = (pct: number, txt: string) => setProgress(pct, txt || '');
 
-    const projectMapForTasks = new Map();
-    (listData.projects || []).forEach((p) => projectMapForTasks.set(p.projectId, p));
-    const seenProj = new Set();
-    const selectedProjects = [];
+    const projectMapForTasks = new Map<string, Project>();
+    (listData!.projects || []).forEach((p) => projectMapForTasks.set(p.projectId, p));
+    const seenProj = new Set<string>();
+    const selectedProjects: Project[] = [];
     tasks.forEach((t) => {
       if (!t.projectId) return;
       if (seenProj.has(t.projectId)) return;
@@ -284,7 +287,7 @@ function showBatchExportDialog() {
       saveBlob(blob, `chatgpt-batch-${ts}.zip`);
       setProgress(100, '完成');
       setStatus('完成 ✅（已下载 ZIP）');
-    } catch (e) {
+    } catch (e: any) {
       console.error('[ChatGPT-Multimodal-Exporter] 批量导出失败', e);
       alert('批量导出失败：' + (e && e.message ? e.message : e));
       setStatus('失败');
@@ -311,7 +314,7 @@ function showBatchExportDialog() {
       renderList(res);
       setProgress(100, '加载完成');
       setStatus('请选择要导出的会话');
-    } catch (e) {
+    } catch (e: any) {
       console.error('[ChatGPT-Multimodal-Exporter] 拉取列表失败', e);
       setStatus('拉取列表失败');
       alert('拉取列表失败：' + (e && e.message ? e.message : e));
@@ -319,7 +322,7 @@ function showBatchExportDialog() {
   })();
 }
 
-function showFilePreviewDialog(candidates, onConfirm) {
+function showFilePreviewDialog(candidates: FileCandidate[], onConfirm: (selected: FileCandidate[]) => void) {
   const overlay = U.ce('div', { className: 'cgptx-modal' });
   const box = U.ce('div', { className: 'cgptx-modal-box' });
 
@@ -353,8 +356,9 @@ function showFilePreviewDialog(candidates, onConfirm) {
     const checkbox = U.ce('input', {
       type: 'checkbox',
       checked: true,
-      'data-idx': idx,
     });
+    checkbox.dataset.idx = String(idx);
+
     const body = U.ce('div');
     const name = (info.meta && (info.meta.name || info.meta.file_name)) || info.file_id || info.pointer || '未命名';
     const titleEl = U.ce('div', { className: 'title', textContent: name });
@@ -410,7 +414,7 @@ function showFilePreviewDialog(candidates, onConfirm) {
   });
 }
 
-let lastConvData = null;
+let lastConvData: Conversation | null = null;
 
 export function mountUI() {
   if (!U.isHostOK()) return;
@@ -749,7 +753,7 @@ export function mountUI() {
       const filename = `${title || 'chat'}_${id}.json`;
       saveJSON(data, filename);
       btnJson.title = '导出完成 ✅（点击可重新导出）';
-    } catch (e) {
+    } catch (e: any) {
       console.error('[ChatGPT-Multimodal-Exporter] 导出失败：', e);
       alert('导出失败: ' + (e && e.message ? e.message : e));
       btnJson.title = '导出失败 ❌（点击重试）';
@@ -793,7 +797,7 @@ export function mountUI() {
         btnFiles.disabled = false;
         alert(`文件下载完成，成功 ${res.ok}/${res.total}，详情见控制台。`);
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error('[ChatGPT-Multimodal-Exporter] 下载文件失败：', e);
       alert('下载文件失败: ' + (e && e.message ? e.message : e));
       btnFiles.title = '下载文件失败（点击重试）';
@@ -808,7 +812,7 @@ export function mountUI() {
     try {
       await refreshCredStatus();
       showBatchExportDialog();
-    } catch (e) {
+    } catch (e: any) {
       console.error('[ChatGPT-Multimodal-Exporter] 打开批量导出失败', e);
       alert('打开批量导出失败: ' + (e && e.message ? e.message : e));
     } finally {

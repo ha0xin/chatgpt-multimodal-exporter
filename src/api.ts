@@ -1,9 +1,8 @@
-// @ts-nocheck
-
 import { Cred } from './cred';
 import { U, gmDownload, gmFetchBlob, inferFilename } from './utils';
+import { Conversation } from './types';
 
-export async function fetchConversation(id, projectId) {
+export async function fetchConversation(id: string, projectId?: string): Promise<Conversation> {
   if (!Cred.token) {
     const ok = await Cred.ensureViaSession();
     if (!ok) throw new Error('无法获取登录凭证（accessToken）');
@@ -13,7 +12,7 @@ export async function fetchConversation(id, projectId) {
   if (projectId) headers.set('chatgpt-project-id', projectId);
 
   const url = `${location.origin}/backend-api/conversation/${id}`;
-  const init = {
+  const init: RequestInit = {
     method: 'GET',
     credentials: 'include',
     headers,
@@ -37,7 +36,15 @@ export async function fetchConversation(id, projectId) {
   return resp.json();
 }
 
-export async function downloadSandboxFile({ conversationId, messageId, sandboxPath }) {
+export async function downloadSandboxFile({
+  conversationId,
+  messageId,
+  sandboxPath,
+}: {
+  conversationId: string;
+  messageId: string;
+  sandboxPath: string;
+}): Promise<void> {
   if (!Cred.token) {
     const ok = await Cred.ensureViaSession();
     if (!ok) throw new Error('没有 accessToken，无法下载 sandbox 文件');
@@ -56,7 +63,7 @@ export async function downloadSandboxFile({ conversationId, messageId, sandboxPa
     const txt = await resp.text().catch(() => '');
     throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 120)}`);
   }
-  let j;
+  let j: any;
   try {
     j = await resp.json();
   } catch (e) {
@@ -68,7 +75,15 @@ export async function downloadSandboxFile({ conversationId, messageId, sandboxPa
   await gmDownload(dl, fname);
 }
 
-export async function downloadSandboxFileBlob({ conversationId, messageId, sandboxPath }) {
+export async function downloadSandboxFileBlob({
+  conversationId,
+  messageId,
+  sandboxPath,
+}: {
+  conversationId: string;
+  messageId: string;
+  sandboxPath: string;
+}): Promise<{ blob: Blob; mime: string; filename: string }> {
   if (!Cred.token) {
     const ok = await Cred.ensureViaSession();
     if (!ok) throw new Error('没有 accessToken，无法下载 sandbox 文件');
@@ -87,7 +102,7 @@ export async function downloadSandboxFileBlob({ conversationId, messageId, sandb
     const txt = await resp.text().catch(() => '');
     throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 120)}`);
   }
-  let j;
+  let j: any;
   try {
     j = await resp.json();
   } catch (e) {
@@ -97,18 +112,25 @@ export async function downloadSandboxFileBlob({ conversationId, messageId, sandb
   if (!dl) throw new Error('sandbox download_url 缺失');
   const gmHeaders = {};
   const res = await gmFetchBlob(dl, gmHeaders);
-  const fname = inferFilename(j.file_name || sandboxPath.split('/').pop() || 'sandbox_file', sandboxPath, res.mime || '');
+  const fname = inferFilename(
+    j.file_name || sandboxPath.split('/').pop() || 'sandbox_file',
+    sandboxPath,
+    res.mime || ''
+  );
   return { blob: res.blob, mime: res.mime || '', filename: fname };
 }
 
-export async function fetchFileMeta(fileId, headers) {
+export async function fetchFileMeta(fileId: string, headers: Headers): Promise<any> {
   const url = `${location.origin}/backend-api/files/${fileId}`;
   const resp = await fetch(url, { method: 'GET', headers, credentials: 'include' });
   if (!resp.ok) throw new Error(`meta ${resp.status}`);
   return resp.json();
 }
 
-export async function fetchDownloadUrlOrResponse(fileId, headers) {
+export async function fetchDownloadUrlOrResponse(
+  fileId: string,
+  headers: Headers
+): Promise<string | Response | null> {
   const url = `${location.origin}/backend-api/files/download/${fileId}?inline=false`;
   const resp = await fetch(url, { method: 'GET', headers, credentials: 'include' });
   if (!resp.ok) throw new Error(`download meta ${resp.status}`);
@@ -119,3 +141,4 @@ export async function fetchDownloadUrlOrResponse(fileId, headers) {
   }
   return resp;
 }
+

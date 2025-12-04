@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 
 import { mountUI } from './ui';
 import { U } from './utils';

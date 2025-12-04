@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { Cred } from './cred';
 import { U, gmDownload, gmFetchBlob, saveBlob, inferFilename } from './utils';
 import {
@@ -7,8 +5,9 @@ import {
   downloadSandboxFileBlob,
   fetchDownloadUrlOrResponse,
 } from './api';
+import { FileCandidate, DownloadResult } from './types';
 
-export async function downloadPointerOrFile(fileInfo) {
+export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<void> {
   const fileId = fileInfo.file_id;
   const pointer = fileInfo.pointer || '';
   const convId = fileInfo.conversation_id || '';
@@ -43,7 +42,7 @@ export async function downloadPointerOrFile(fileInfo) {
   if (pid) headers.set('chatgpt-project-id', pid);
 
   const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
-  let resp;
+  let resp: Response;
   if (downloadResult instanceof Response) {
     resp = downloadResult;
   } else if (typeof downloadResult === 'string') {
@@ -77,7 +76,7 @@ export async function downloadPointerOrFile(fileInfo) {
   saveBlob(blob, name);
 }
 
-export async function downloadSelectedFiles(list) {
+export async function downloadSelectedFiles(list: FileCandidate[]): Promise<DownloadResult> {
   let okCount = 0;
   for (const info of list) {
     try {
@@ -90,7 +89,9 @@ export async function downloadSelectedFiles(list) {
   return { ok: okCount, total: list.length };
 }
 
-export async function downloadPointerOrFileAsBlob(fileInfo) {
+export async function downloadPointerOrFileAsBlob(
+  fileInfo: FileCandidate
+): Promise<{ blob: Blob; mime: string; filename: string }> {
   const fileId = fileInfo.file_id;
   const pointer = fileInfo.pointer || '';
   const convId = fileInfo.conversation_id || '';
@@ -122,7 +123,7 @@ export async function downloadPointerOrFileAsBlob(fileInfo) {
   if (projectId) headers.set('chatgpt-project-id', projectId);
 
   const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
-  let resp;
+  let resp: Response;
   if (downloadResult instanceof Response) {
     resp = downloadResult;
   } else if (typeof downloadResult === 'string') {
@@ -161,3 +162,4 @@ export async function downloadPointerOrFileAsBlob(fileInfo) {
   );
   return { blob, mime, filename: name };
 }
+
