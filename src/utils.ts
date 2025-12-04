@@ -1,17 +1,6 @@
 import { GM_download, GM_xmlhttpRequest } from 'vite-plugin-monkey/dist/client';
 
-export const qs = (s: string, r: Document | Element = document): Element | null => r.querySelector(s);
 
-export const ce = <K extends keyof HTMLElementTagNameMap>(
-  t: K,
-  props: Partial<Omit<HTMLElementTagNameMap[K], 'style'>> & { style?: string | Partial<CSSStyleDeclaration> } = {},
-  attrs: Record<string, string> = {}
-): HTMLElementTagNameMap[K] => {
-  const el = document.createElement(t);
-  Object.assign(el, props);
-  for (const k in attrs) el.setAttribute(k, attrs[k]);
-  return el;
-};
 
 export const sanitize = (s: string): string => (s || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80);
 
@@ -86,7 +75,8 @@ export const LIST_PAGE_SIZE = 50;
 
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
-  const a = ce('a', { href: url });
+  const a = document.createElement('a');
+  a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
