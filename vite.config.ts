@@ -22,6 +22,7 @@ export default defineConfig({
         fileName: 'chatgpt-multimodal-exporter.user.js',
         externalGlobals: {
           preact: cdn.jsdelivr('preact', 'dist/preact.min.js'),
+          jszip: cdn.jsdelivr('JSZip', 'dist/jszip.min.js'),
         },
       },
     }),
