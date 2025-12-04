@@ -8,6 +8,7 @@
 // @run-at       document-end
 // @grant        GM_download
 // @grant        GM_xmlhttpRequest
+// @require      https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js
 // ==/UserScript==
 
 (function () {
@@ -62,6 +63,7 @@
       }
       return `${v.toFixed(v >= 10 || v % 1 === 0 ? 0 : 1)}${units[i]}`;
     },
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     // 支持 /c/xxx 和 /g/yyy/c/xxx 两种路径
     convId: () => {
       const p = location.pathname;
@@ -79,6 +81,9 @@
       location.host.endsWith("chatgpt.com") ||
       location.host.endsWith("chat.openai.com"),
   };
+
+  const BATCH_CONCURRENCY = 4;
+  const LIST_PAGE_SIZE = 50;
 
   // --- 凭证模块：获取 accessToken / accountId ---------------------
   const Cred = (() => {
@@ -221,6 +226,39 @@
     await gmDownload(dl, fname);
   }
 
+  async function downloadSandboxFileBlob({ conversationId, messageId, sandboxPath }) {
+    if (!Cred.token) {
+      const ok = await Cred.ensureViaSession();
+      if (!ok) throw new Error("没有 accessToken，无法下载 sandbox 文件");
+    }
+    const headers = Cred.getAuthHeaders();
+    const pid = U.projectId();
+    if (pid) headers.set("chatgpt-project-id", pid);
+
+    const params = new URLSearchParams({
+      message_id: messageId,
+      sandbox_path: sandboxPath.replace(/^sandbox:/, ""),
+    });
+    const url = `${location.origin}/backend-api/conversation/${conversationId}/interpreter/download?${params.toString()}`;
+    const resp = await fetch(url, { headers, credentials: "include" });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+    let j;
+    try {
+      j = await resp.json();
+    } catch (e) {
+      throw new Error("sandbox download meta 非 JSON");
+    }
+    const dl = j.download_url;
+    if (!dl) throw new Error("sandbox download_url 缺失");
+    const fname = U.sanitize(j.file_name || sandboxPath.split("/").pop() || "sandbox_file");
+    const gmHeaders = {};
+    const res = await gmFetchBlob(dl, gmHeaders);
+    return { blob: res.blob, mime: res.mime || "", filename: fname };
+  }
+
   // --- 文件下载助手 -----------------------------------------------
   function saveBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
@@ -248,6 +286,31 @@
         onload: resolve,
         onerror: reject,
         ontimeout: reject,
+      });
+    });
+  }
+
+  function parseMimeFromHeaders(raw) {
+    if (!raw) return "";
+    const m = raw.match(/content-type:\s*([^\r\n;]+)/i);
+    return m ? m[1].trim() : "";
+  }
+
+  // 跨域抓取二进制为 Blob（用于 ZIP 打包）
+  function gmFetchBlob(url, headers) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        url,
+        method: "GET",
+        headers: headers || {},
+        responseType: "arraybuffer",
+        onload: (res) => {
+          const mime = parseMimeFromHeaders(res.responseHeaders || "") || "";
+          const buf = res.response || res.responseText;
+          resolve({ blob: new Blob([buf], { type: mime }), mime });
+        },
+        onerror: (err) => reject(new Error(err && err.error ? err.error : "gm_fetch_error")),
+        ontimeout: () => reject(new Error("gm_fetch_timeout")),
       });
     });
   }
@@ -451,6 +514,77 @@
     return { ok: okCount, total: list.length };
   }
 
+  // 批量场景：返回 Blob 以便 ZIP 打包
+  async function downloadPointerOrFileAsBlob(fileInfo) {
+    const fileId = fileInfo.file_id;
+    const pointer = fileInfo.pointer || "";
+    const convId = fileInfo.conversation_id || "";
+    const projectId = fileInfo.project_id || "";
+    const messageId = fileInfo.message_id || "";
+
+    // inline CDN
+    if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
+      const url = U.isInlinePointer(pointer) ? pointer : fileId;
+      const ext = U.fileExtFromMime(fileInfo.meta?.mime_type || "") || ".bin";
+      const name =
+        (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+        `${U.sanitize(fileId || pointer)}${ext}`;
+      const res = await gmFetchBlob(url);
+      return { blob: res.blob, mime: res.mime || fileInfo.meta?.mime_type || "", filename: U.sanitize(name) };
+    }
+
+    // sandbox pointer -> interpreter download
+    if (pointer && pointer.startsWith("sandbox:")) {
+      if (!convId || !messageId) throw new Error("sandbox pointer 缺少 conversation/message id");
+      return downloadSandboxFileBlob({ conversationId: convId, messageId, sandboxPath: pointer });
+    }
+
+    if (!Cred.token) {
+      const ok = await Cred.ensureViaSession();
+      if (!ok) throw new Error("没有 accessToken，无法下载文件");
+    }
+    const headers = Cred.getAuthHeaders();
+    if (projectId) headers.set("chatgpt-project-id", projectId);
+
+    const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
+    let resp;
+    if (downloadResult instanceof Response) {
+      resp = downloadResult;
+    } else if (typeof downloadResult === "string") {
+      const res = await gmFetchBlob(downloadResult);
+      const fname =
+        (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+        `${fileId}${U.fileExtFromMime(fileInfo.meta?.mime_type || "") || ""}`;
+      return {
+        blob: res.blob,
+        mime: res.mime || fileInfo.meta?.mime_type || "",
+        filename: U.sanitize(fname),
+      };
+    } else {
+      throw new Error("无法获取 download_url");
+    }
+
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`下载失败 ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+
+    const blob = await resp.blob();
+    const cd = resp.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+    const mime =
+      (fileInfo.meta && (fileInfo.meta.mime_type || fileInfo.meta.file_type)) ||
+      resp.headers.get("Content-Type") ||
+      "";
+    const ext = U.fileExtFromMime(mime) || ".bin";
+    let name =
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+      (m && decodeURIComponent(m[1])) ||
+      `${fileId}${ext}`;
+    name = U.sanitize(name);
+    return { blob, mime, filename: name };
+  }
+
   // --- 从会话 JSON 中抽取图片信息 --------------------------------
   function extractImages(conv) {
     const mapping = conv && conv.mapping ? conv.mapping : {};
@@ -526,6 +660,670 @@
       images
     );
     return images;
+  }
+
+  // --- 会话列表 / 批量导出工具 -----------------------------------
+  async function listConversationsPage({ offset = 0, limit = 100, is_archived, is_starred, order }) {
+    if (!Cred.token) await Cred.ensureViaSession();
+    const headers = Cred.getAuthHeaders();
+    const qs = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    });
+    if (typeof is_archived === "boolean") qs.set("is_archived", String(is_archived));
+    if (typeof is_starred === "boolean") qs.set("is_starred", String(is_starred));
+    if (order) qs.set("order", order);
+    const url = `${location.origin}/backend-api/conversations?${qs.toString()}`;
+    const resp = await fetch(url, { headers, credentials: "include" });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`list convs ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+    return resp.json();
+  }
+
+  async function listProjectConversations({ projectId, cursor = 0, limit = 50 }) {
+    if (!Cred.token) await Cred.ensureViaSession();
+    const headers = Cred.getAuthHeaders();
+    const url = `${location.origin}/backend-api/gizmos/${projectId}/conversations?cursor=${cursor}&limit=${limit}`;
+    const resp = await fetch(url, { headers, credentials: "include" });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`project convs ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+    return resp.json();
+  }
+
+  async function listGizmosSidebar(cursor) {
+    if (!Cred.token) await Cred.ensureViaSession();
+    const headers = Cred.getAuthHeaders();
+    const url = new URL(`${location.origin}/backend-api/gizmos/snorlax/sidebar`);
+    url.searchParams.set("conversations_per_gizmo", "0");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const resp = await fetch(url.toString(), { headers, credentials: "include" });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`gizmos sidebar ${resp.status}: ${txt.slice(0, 120)}`);
+    }
+    return resp.json();
+  }
+
+  // 参考 chatgpt-exporter：分两阶段拉取 root 和 project 会话，避免遗漏
+  async function collectAllConversationTasks(progressCb) {
+    const rootSet = new Set();
+    const rootInfo = new Map();
+    const projectMap = new Map();
+
+    const addRoot = (id, title) => {
+      if (!id) return;
+      rootSet.add(id);
+      if (!rootInfo.has(id)) rootInfo.set(id, { id, title: title || "" });
+    };
+
+    const addProjectConv = (projectId, id, title) => {
+      if (!projectId || !id) return;
+      let rec = projectMap.get(projectId);
+      if (!rec) {
+        rec = { projectId, projectName: "", createdAt: "", convs: [] };
+        projectMap.set(projectId, rec);
+      }
+      if (!rec.convs.some((x) => x.id === id)) {
+        rec.convs.push({ id, title: title || "" });
+      }
+      if (rootSet.has(id)) {
+        rootSet.delete(id);
+        rootInfo.delete(id);
+      }
+    };
+
+    // 1) root conversations (个人空间) — 先拉基础列表，再尝试档/星组合补全
+    const fetchRootBasic = async () => {
+      const limit = 100;
+      let offset = 0;
+      while (true) {
+        const page = await listConversationsPage({ offset, limit }).catch((e) => {
+          console.warn("[ChatGPT-Multimodal-Exporter] list conversations failed", e);
+          return null;
+        });
+        const arr = Array.isArray(page?.items) ? page.items : [];
+        arr.forEach((it) => {
+          if (!it || !it.id) return;
+          const id = it.id;
+          const projId = it.conversation_template_id || it.gizmo_id || null;
+          if (projId) addProjectConv(projId, id, it.title || "");
+          else addRoot(id, it.title || "");
+        });
+        if (progressCb) progressCb(3, `个人会话：${offset + arr.length}${page?.total ? `/${page.total}` : ""}`);
+        if (!arr.length || arr.length < limit || (page && page.total !== null && offset + limit >= page.total)) break;
+        offset += limit;
+        await U.sleep(120);
+      }
+    };
+
+    const fetchRootCombos = async () => {
+      const combos = [
+        { is_archived: false, is_starred: false },
+        { is_archived: true, is_starred: false },
+        { is_archived: false, is_starred: true },
+        { is_archived: true, is_starred: true },
+      ];
+      const limit = 100;
+      for (const c of combos) {
+        let offset = 0;
+        while (true) {
+          const page = await listConversationsPage({
+            offset,
+            limit,
+            is_archived: c.is_archived,
+            is_starred: c.is_starred,
+            order: "updated",
+          }).catch((e) => {
+            console.warn("[ChatGPT-Multimodal-Exporter] list conversations failed", e);
+            return null;
+          });
+          const arr = Array.isArray(page?.items) ? page.items : [];
+          arr.forEach((it) => {
+            if (!it || !it.id) return;
+            const id = it.id;
+            const projId = it.conversation_template_id || it.gizmo_id || null;
+            if (projId) addProjectConv(projId, id, it.title || "");
+            else addRoot(id, it.title || "");
+          });
+          if (progressCb)
+            progressCb(
+              3,
+              `补充扫描：${offset + arr.length}${page?.total ? `/${page.total}` : ""}（归档:${c.is_archived ? "是" : "否"}/星:${c.is_starred ? "是" : "否"}）`
+            );
+          if (!arr.length || arr.length < limit || (page && page.total !== null && offset + limit >= page.total)) break;
+          offset += limit;
+          await U.sleep(120);
+        }
+      }
+    };
+
+    try {
+      await fetchRootBasic();
+      // 如果根会话数量为 0，再尝试档/星组合补全
+      if (!rootSet.size) await fetchRootCombos();
+    } catch (e) {
+      console.warn("[ChatGPT-Multimodal-Exporter] root list error", e);
+    }
+
+    // 2) 项目列表 + 项目会话
+    try {
+      let cursor = null;
+      let pageIndex = 0;
+      const projectIds = [];
+      do {
+        const sidebar = await listGizmosSidebar(cursor);
+        const items = Array.isArray(sidebar?.items) ? sidebar.items : [];
+        pageIndex++;
+        items.forEach((it, idx) => {
+          const g = it && it.gizmo && it.gizmo.gizmo;
+          if (!g || !g.id) {
+            if (progressCb) progressCb(4, `扫描项目第${pageIndex}页：${idx + 1}/${items.length}`);
+            return;
+          }
+          const pid = g.id;
+          const pname = (g.display && g.display.name) || "";
+          const createdAt = g.created_at || "";
+          let rec = projectMap.get(pid);
+          if (!rec) {
+            rec = { projectId: pid, projectName: pname || pid, createdAt, convs: [] };
+            projectMap.set(pid, rec);
+          } else {
+            if (!rec.projectName && pname) rec.projectName = pname;
+            if (!rec.createdAt && createdAt) rec.createdAt = createdAt;
+          }
+          projectIds.push(pid);
+          if (progressCb) progressCb(4, `扫描项目第${pageIndex}页：${idx + 1}/${items.length}`);
+        });
+        cursor = sidebar && sidebar.cursor ? sidebar.cursor : null;
+      } while (cursor);
+
+      // 拉取各项目会话
+      for (const pid of projectIds) {
+        let cursor = 0;
+        const limit = 50;
+        while (true) {
+          const page = await listProjectConversations({ projectId: pid, cursor, limit }).catch((e) => {
+            console.warn("[ChatGPT-Multimodal-Exporter] project conversations failed", e);
+            return null;
+          });
+          const arr = Array.isArray(page?.items) ? page.items : [];
+          arr.forEach((it) => {
+            if (!it || !it.id) return;
+            addProjectConv(pid, it.id, it.title || "");
+          });
+          if (progressCb) progressCb(5, `项目 ${pid}：${cursor + arr.length}${page?.total ? `/${page.total}` : ""}`);
+          if (!arr.length || arr.length < limit || (page && page.total !== null && cursor + limit >= page.total)) break;
+          cursor += limit;
+          await U.sleep(120);
+        }
+      }
+    } catch (e) {
+      console.warn("[ChatGPT-Multimodal-Exporter] project list error", e);
+    }
+
+    const rootIds = Array.from(rootSet);
+    const roots = Array.from(rootInfo.values());
+    const projects = Array.from(projectMap.values());
+    return { rootIds, roots, projects };
+  }
+
+  async function fetchConvWithRetry(id, projectId, retries = 2) {
+    let attempt = 0;
+    let lastErr = null;
+    while (attempt <= retries) {
+      try {
+        return await fetchConversation(id, projectId);
+      } catch (e) {
+        lastErr = e;
+        attempt++;
+        const delay = 400 * Math.pow(2, attempt - 1);
+        await U.sleep(delay);
+      }
+    }
+    throw lastErr || new Error("fetch_failed");
+  }
+
+  async function fetchConversationsBatch(tasks, concurrency, progressCb, cancelRef) {
+    const total = tasks.length;
+    if (!total) return [];
+    const results = new Array(total);
+    let done = 0;
+    let index = 0;
+    let fatalErr = null;
+
+    const worker = async () => {
+      while (true) {
+        if (cancelRef && cancelRef.cancel) return;
+        if (fatalErr) return;
+        const i = index++;
+        if (i >= total) return;
+        const t = tasks[i];
+        try {
+          const data = await fetchConvWithRetry(t.id, t.projectId, 2);
+          results[i] = data;
+          done++;
+          const pct = total ? Math.round((done / total) * 60) + 10 : 10;
+          if (progressCb) progressCb(pct, `导出 JSON：${done}/${total}`);
+        } catch (e) {
+          fatalErr = e;
+          return;
+        }
+      }
+    };
+
+    const n = Math.max(1, Math.min(concurrency || 1, total));
+    const workers = [];
+    for (let i = 0; i < n; i++) workers.push(worker());
+    await Promise.all(workers);
+    if (fatalErr) throw fatalErr;
+    return results;
+  }
+
+  function buildProjectFolderNames(projects) {
+    const map = new Map();
+    const counts = {};
+    projects.forEach((p) => {
+      const base = U.sanitize(p.projectName || p.projectId || "project");
+      counts[base] = (counts[base] || 0) + 1;
+    });
+    projects.forEach((p) => {
+      let baseName = U.sanitize(p.projectName || p.projectId || "project");
+      if (counts[baseName] > 1) {
+        const stamp = p.createdAt ? p.createdAt.replace(/[^\d]/g, "").slice(0, 14) : "";
+        if (stamp) {
+          const raw = p.projectName || baseName;
+          baseName = U.sanitize(`${raw}_${stamp}`);
+        }
+      }
+      map.set(p.projectId, baseName || "project");
+    });
+    return map;
+  }
+
+  async function runBatchExport({
+    tasks,
+    projects,
+    rootIds,
+    includeAttachments = true,
+    concurrency = BATCH_CONCURRENCY,
+    progressCb,
+    cancelRef,
+  }) {
+    if (!tasks || !tasks.length) throw new Error("任务列表为空");
+    if (typeof JSZip === "undefined") throw new Error("JSZip 未加载");
+    const zip = new JSZip();
+    const summary = {
+      exported_at: new Date().toISOString(),
+      total_conversations: tasks.length,
+      root: { count: rootIds.length, ids: rootIds },
+      projects: (projects || []).map((p) => ({
+        projectId: p.projectId,
+        projectName: p.projectName || "",
+        createdAt: p.createdAt || "",
+        count: Array.isArray(p.convs) ? p.convs.length : 0,
+      })),
+      attachments_map: [],
+      failed: { conversations: [], attachments: [] },
+    };
+
+    const folderNameByProjectId = buildProjectFolderNames(projects || []);
+    const rootJsonFolder = zip.folder("json");
+    const rootAttFolder = zip.folder("attachments");
+    const projCache = new Map(); // pid -> {json, att}
+
+    const results = await fetchConversationsBatch(tasks, concurrency, progressCb, cancelRef);
+    if (cancelRef && cancelRef.cancel) throw new Error("用户已取消");
+
+    let idxRoot = 0;
+    const projSeq = {};
+
+    for (let i = 0; i < tasks.length; i++) {
+      if (cancelRef && cancelRef.cancel) throw new Error("用户已取消");
+      const t = tasks[i];
+      const data = results[i];
+      if (!data) {
+        summary.failed.conversations.push({
+          id: t.id,
+          projectId: t.projectId || "",
+          reason: "为空",
+        });
+        continue;
+      }
+      const isProject = !!t.projectId;
+      let baseFolderJson = rootJsonFolder;
+      let baseFolderAtt = rootAttFolder;
+      let seq = "";
+      if (isProject) {
+        const fname = folderNameByProjectId.get(t.projectId) || U.sanitize(t.projectId || "project");
+        let cache = projCache.get(t.projectId);
+        if (!cache) {
+          const rootFolder = zip.folder(`projects/${fname}`);
+          cache = {
+            json: rootFolder ? rootFolder.folder("json") : null,
+            att: rootFolder ? rootFolder.folder("attachments") : null,
+          };
+          projCache.set(t.projectId, cache);
+        }
+        baseFolderJson = cache.json || rootJsonFolder;
+        baseFolderAtt = cache.att || rootAttFolder;
+        projSeq[t.projectId] = (projSeq[t.projectId] || 0) + 1;
+        seq = String(projSeq[t.projectId]).padStart(3, "0");
+      } else {
+        idxRoot++;
+        seq = String(idxRoot).padStart(3, "0");
+      }
+
+      const title = U.sanitize(data?.title || "");
+      const baseName = `${seq}_${title || "chat"}_${t.id}`;
+      const jsonName = `${baseName}.json`;
+      if (baseFolderJson) {
+        baseFolderJson.file(jsonName, JSON.stringify(data, null, 2));
+      } else {
+        zip.file(jsonName, JSON.stringify(data, null, 2));
+      }
+
+      if (!includeAttachments) {
+        if (progressCb) progressCb(80, `写入 JSON：${i + 1}/${tasks.length}`);
+        continue;
+      }
+
+      const candidates = collectFileCandidates(data).map((x) => ({
+        ...x,
+        project_id: t.projectId || "",
+      }));
+      if (!candidates.length) {
+        if (progressCb) progressCb(80, `附件：${i + 1}/${tasks.length}（无）`);
+        continue;
+      }
+      const convAttFolder = baseFolderAtt ? baseFolderAtt.folder(baseName) : null;
+      const usedNames = new Set();
+      for (const c of candidates) {
+        if (cancelRef && cancelRef.cancel) throw new Error("用户已取消");
+        const pointerKey = c.pointer || c.file_id || "";
+        const originalName =
+          (c.meta && (c.meta.name || c.meta.file_name)) ||
+          "";
+        let finalName = "";
+        try {
+          const res = await downloadPointerOrFileAsBlob(c);
+          finalName = res.filename || `${U.sanitize(pointerKey) || "file"}.bin`;
+          if (usedNames.has(finalName)) {
+            let cnt = 2;
+            while (usedNames.has(`${cnt}_${finalName}`)) cnt++;
+            finalName = `${cnt}_${finalName}`;
+          }
+          usedNames.add(finalName);
+          if (convAttFolder) convAttFolder.file(finalName, res.blob);
+          summary.attachments_map.push({
+            conversation_id: data.conversation_id || t.id,
+            project_id: t.projectId || "",
+            pointer: c.pointer || "",
+            file_id: c.file_id || "",
+            saved_as: finalName,
+            source: c.source || "",
+            mime: res.mime || c.meta?.mime_type || "",
+            original_name: originalName,
+            size_bytes:
+              c.meta?.size_bytes ||
+              c.meta?.size ||
+              c.meta?.file_size ||
+              c.meta?.file_size_bytes ||
+              null,
+          });
+        } catch (e) {
+          summary.failed.attachments.push({
+            conversation_id: data.conversation_id || t.id,
+            project_id: t.projectId || "",
+            pointer: c.pointer || c.file_id || "",
+            error: e && e.message ? e.message : String(e),
+          });
+        }
+      }
+      if (progressCb) progressCb(80 + Math.round(((i + 1) / tasks.length) * 15), `附件：${i + 1}/${tasks.length}`);
+    }
+
+    zip.file("summary.json", JSON.stringify(summary, null, 2));
+    if (progressCb) progressCb(98, "压缩中…");
+    const blob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: { level: 7 },
+    });
+    return blob;
+  }
+
+  // --- 批量导出对话 + 附件 UI -----------------------------------
+  function showBatchExportDialog() {
+    const overlay = U.ce("div", { className: "cgptx-modal" });
+    const box = U.ce("div", { className: "cgptx-modal-box" });
+
+    const header = U.ce("div", { className: "cgptx-modal-header" });
+    const title = U.ce("div", {
+      className: "cgptx-modal-title",
+      textContent: "批量导出对话（JSON + 附件）",
+    });
+
+    const actions = U.ce("div", { className: "cgptx-modal-actions" });
+    const btnClose = U.ce("button", { className: "cgptx-btn", textContent: "关闭" });
+    const btnToggle = U.ce("button", { className: "cgptx-btn", textContent: "全选/反选" });
+    const btnStart = U.ce("button", { className: "cgptx-btn primary", textContent: "开始导出" });
+    const btnStop = U.ce("button", { className: "cgptx-btn", textContent: "停止", disabled: true });
+    actions.append(btnToggle, btnStart, btnStop, btnClose);
+    header.append(title, actions);
+
+    const status = U.ce("div", { className: "cgptx-chip", textContent: "加载会话列表…" });
+    const opts = U.ce("div", { className: "cgptx-modal-actions", style: "justify-content:flex-start;" });
+    const optAttachLabel = U.ce("label", { style: "display:flex;align-items:center;gap:6px;" });
+    const optAttachments = U.ce("input", { type: "checkbox", checked: true });
+    const optTxt = U.ce("span", { textContent: "包含附件（ZIP）" });
+    optAttachLabel.append(optAttachments, optTxt);
+    opts.append(optAttachLabel);
+
+    const listWrap = U.ce("div", {
+      className: "cgptx-list",
+      style: "max-height:46vh;overflow:auto;border:1px solid #1f2937;border-radius:10px;",
+    });
+
+    const progText = U.ce("div", { className: "cgptx-chip", textContent: "" });
+
+    box.append(header, status, opts, listWrap, progText);
+    overlay.append(box);
+    document.body.append(overlay);
+
+    const close = () => overlay.remove();
+    btnClose.addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+
+    let listData = null;
+    let checkboxes = [];
+    const cancelRef = { cancel: false };
+
+    const setStatus = (txt) => {
+      status.textContent = txt;
+    };
+    const setProgress = (pct, txt) => {
+      progText.textContent = `${txt || ""} ${pct ? `(${pct}%)` : ""}`;
+    };
+
+    const getRootsList = (data) => {
+      if (data && Array.isArray(data.roots) && data.roots.length) return data.roots;
+      if (data && Array.isArray(data.rootIds) && data.rootIds.length)
+        return data.rootIds.map((id) => ({ id, title: id }));
+      return [];
+    };
+
+    const renderList = (data) => {
+      listWrap.innerHTML = "";
+      checkboxes = [];
+      const addGroup = (titleText, items, projectId) => {
+        const group = U.ce("div", {
+          style:
+            "border-bottom:1px solid #1f2937;padding:10px 8px;display:flex;flex-direction:column;gap:8px;",
+        });
+        const h = U.ce("div", { className: "title", textContent: titleText });
+        group.append(h);
+        items.forEach((it) => {
+          const row = U.ce("div", { className: "cgptx-item" });
+          const cb = U.ce("input", {
+            type: "checkbox",
+            checked: true,
+            defaultChecked: true,
+            "data-id": it.id,
+            "data-project": projectId || "",
+          });
+          const body = U.ce("div");
+          const titleEl = U.ce("div", { className: "title", textContent: it.title || it.id });
+          const metaEl = U.ce("div", {
+            className: "meta",
+            textContent: projectId ? `项目: ${projectId}` : "个人会话",
+          });
+          body.append(titleEl, metaEl);
+          row.append(cb, body);
+          group.append(row);
+          checkboxes.push(cb);
+        });
+        listWrap.append(group);
+      };
+
+      const rootsList = getRootsList(data);
+      if (rootsList.length) addGroup("根目录会话", rootsList, "");
+      (data.projects || []).forEach((p) => {
+        const convs = Array.isArray(p.convs) ? p.convs : [];
+        if (!convs.length) return;
+        addGroup(`项目：${p.projectName || p.projectId}`, convs, p.projectId);
+      });
+      setStatus(`已加载：根会话 ${rootsList.length}，项目 ${data.projects.length}`);
+    };
+
+    const toggleAll = () => {
+      if (!checkboxes.length) return;
+      const allChecked = checkboxes.every((c) => c.checked);
+      checkboxes.forEach((c) => (c.checked = !allChecked));
+    };
+    btnToggle.addEventListener("click", toggleAll);
+
+    const startExport = async () => {
+      if (!listData) return;
+      // 直接从 DOM 取最新的勾选状态，防止引用过期
+      const liveBoxes = Array.from(listWrap.querySelectorAll('input[type="checkbox"]'));
+      const selectedIds = new Set(liveBoxes.filter((c) => c.checked).map((c) => c.getAttribute("data-id")));
+      if (!selectedIds.size) {
+        alert("请至少选择一条会话");
+        return;
+      }
+      cancelRef.cancel = false;
+      btnStart.disabled = true;
+      btnStop.disabled = false;
+      btnToggle.disabled = true;
+      setStatus("准备导出…");
+
+      // 直接用勾选框构建任务，避免数据结构不一致导致遗漏
+      const tasks = [];
+      const seen = new Set();
+      let anyChecked = false;
+      liveBoxes
+        .filter((c) => c.checked)
+        .forEach((c) => {
+          const id = c.getAttribute("data-id") || "";
+          const projectId = c.getAttribute("data-project") || null;
+          if (!id) return;
+          const key = `${projectId || "root"}::${id}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          tasks.push({ id, projectId });
+          anyChecked = true;
+        });
+      // 兜底：如果没有检测到选中但存在列表，则默认全选一次
+      if (!tasks.length && liveBoxes.length) {
+        console.warn("[ChatGPT-Multimodal-Exporter] 未检测到选中项，兜底使用全选");
+        liveBoxes.forEach((c) => {
+          const id = c.getAttribute("data-id") || "";
+          const projectId = c.getAttribute("data-project") || null;
+          if (!id) return;
+          const key = `${projectId || "root"}::${id}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          tasks.push({ id, projectId });
+        });
+        anyChecked = true;
+      }
+      if (!tasks.length) {
+        console.warn("[ChatGPT-Multimodal-Exporter] 无任务：listData=", listData, "checkboxes=", checkboxes);
+        alert("未能解析勾选的会话，请重试或刷新页面");
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        btnToggle.disabled = false;
+        return;
+      }
+
+      const progressCb = (pct, txt) => setProgress(pct, txt || "");
+
+      // 只在项目列表中存在的项传递项目元数据（用于命名）
+      const projectMapForTasks = new Map();
+      (listData.projects || []).forEach((p) => projectMapForTasks.set(p.projectId, p));
+      const selectedProjects = tasks
+        .map((t) => t.projectId)
+        .filter((pid) => !!pid)
+        .map((pid) => projectMapForTasks.get(pid))
+        .filter(Boolean);
+      const selectedRootIds = tasks.filter((t) => !t.projectId).map((t) => t.id);
+
+      try {
+        const blob = await runBatchExport({
+          tasks,
+          projects: selectedProjects,
+          rootIds: selectedRootIds,
+          includeAttachments: !!optAttachments.checked,
+          concurrency: BATCH_CONCURRENCY,
+          progressCb,
+          cancelRef,
+        });
+        if (cancelRef.cancel) {
+          setStatus("已取消");
+          return;
+        }
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        saveBlob(blob, `chatgpt-batch-${ts}.zip`);
+        setStatus("完成 ✅（已下载 ZIP）");
+      } catch (e) {
+        console.error("[ChatGPT-Multimodal-Exporter] 批量导出失败", e);
+        alert("批量导出失败：" + (e && e.message ? e.message : e));
+        setStatus("失败");
+      } finally {
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        btnToggle.disabled = false;
+        cancelRef.cancel = false;
+      }
+    };
+
+    btnStart.addEventListener("click", startExport);
+    btnStop.addEventListener("click", () => {
+      cancelRef.cancel = true;
+      btnStop.disabled = true;
+      setStatus("请求取消中…");
+    });
+
+    // 拉列表
+    (async () => {
+      try {
+        // 参考 chatgpt-exporter 的多组合扫描逻辑
+        const res = await collectAllConversationTasks((pct, text) => setProgress(pct, text));
+        listData = res;
+        renderList(res);
+        setStatus("请选择要导出的会话");
+      } catch (e) {
+        console.error("[ChatGPT-Multimodal-Exporter] 拉取列表失败", e);
+        setStatus("拉取列表失败");
+        alert("拉取列表失败：" + (e && e.message ? e.message : e));
+      }
+    })();
   }
 
   // --- 预览/选择弹窗 ---------------------------------------------
@@ -825,7 +1623,14 @@
       textContent: "📦",
     });
 
-    row.append(btnJson, btnFiles);
+    const btnBatch = U.ce("button", {
+      id: "cgptx-mini-btn-batch",
+      className: "cgptx-mini-btn",
+      title: "批量导出 JSON + 附件（可勾选）",
+      textContent: "🗂",
+    });
+
+    row.append(btnJson, btnFiles, btnBatch);
     wrap.append(badge, row);
     document.body.appendChild(wrap);
 
@@ -925,6 +1730,22 @@
         btnFiles.title = "下载文件失败（点击重试）";
       } finally {
         btnFiles.disabled = false;
+      }
+    });
+
+    // 批量导出入口
+    btnBatch.addEventListener("click", async () => {
+      btnBatch.disabled = true;
+      btnBatch.title = "加载中…";
+      try {
+        await refreshCredStatus();
+        showBatchExportDialog();
+      } catch (e) {
+        console.error("[ChatGPT-Multimodal-Exporter] 打开批量导出失败", e);
+        alert("打开批量导出失败: " + (e && e.message ? e.message : e));
+      } finally {
+        btnBatch.disabled = false;
+        btnBatch.title = "批量导出 JSON + 附件（可勾选）";
       }
     });
   }
