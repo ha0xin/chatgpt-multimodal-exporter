@@ -1,0 +1,162 @@
+// @ts-nocheck
+
+import { Cred } from './cred';
+import {
+  U,
+  gmDownload,
+  gmFetchBlob,
+  saveBlob,
+} from './utils';
+import {
+  downloadSandboxFile,
+  downloadSandboxFileBlob,
+  fetchDownloadUrlOrResponse,
+} from './api';
+
+export async function downloadPointerOrFile(fileInfo) {
+  const fileId = fileInfo.file_id;
+  const pointer = fileInfo.pointer || '';
+  const convId = fileInfo.conversation_id || '';
+  const messageId = fileInfo.message_id || '';
+
+  if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
+    const url = U.isInlinePointer(pointer) ? pointer : fileId;
+    const ext = U.fileExtFromMime('') || '.bin';
+    const name =
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || `${U.sanitize(fileId)}${ext}`;
+    await gmDownload(url, name);
+    return;
+  }
+
+  if (pointer && pointer.startsWith('sandbox:')) {
+    if (!convId || !messageId) {
+      console.warn('[ChatGPT-Multimodal-Exporter] sandbox pointer缺少 conversation/message id', pointer);
+      return;
+    }
+    await downloadSandboxFile({ conversationId: convId, messageId, sandboxPath: pointer });
+    return;
+  }
+
+  if (!Cred.token) {
+    const ok = await Cred.ensureViaSession();
+    if (!ok) throw new Error('没有 accessToken，无法下载文件');
+  }
+  const headers = Cred.getAuthHeaders();
+  const pid = U.projectId();
+  if (pid) headers.set('chatgpt-project-id', pid);
+
+  const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
+  let resp;
+  if (downloadResult instanceof Response) {
+    resp = downloadResult;
+  } else if (typeof downloadResult === 'string') {
+    const fname =
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+      `${fileId}${U.fileExtFromMime('') || ''}`;
+    await gmDownload(downloadResult, fname);
+    return;
+  } else {
+    throw new Error('无法获取 download_url');
+  }
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`下载失败 ${resp.status}: ${txt.slice(0, 120)}`);
+  }
+
+  const blob = await resp.blob();
+  const cd = resp.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+  const mime =
+    (fileInfo.meta && (fileInfo.meta.mime_type || fileInfo.meta.file_type)) ||
+    resp.headers.get('Content-Type') ||
+    '';
+  const ext = U.fileExtFromMime(mime) || '.bin';
+  let name =
+    (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+    (m && decodeURIComponent(m[1])) ||
+    `${fileId}${ext}`;
+  name = U.sanitize(name);
+  saveBlob(blob, name);
+}
+
+export async function downloadSelectedFiles(list) {
+  let okCount = 0;
+  for (const info of list) {
+    try {
+      await downloadPointerOrFile(info);
+      okCount++;
+    } catch (e) {
+      console.error('[ChatGPT-Multimodal-Exporter] 下载失败', info, e);
+    }
+  }
+  return { ok: okCount, total: list.length };
+}
+
+export async function downloadPointerOrFileAsBlob(fileInfo) {
+  const fileId = fileInfo.file_id;
+  const pointer = fileInfo.pointer || '';
+  const convId = fileInfo.conversation_id || '';
+  const projectId = fileInfo.project_id || '';
+  const messageId = fileInfo.message_id || '';
+
+  if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
+    const url = U.isInlinePointer(pointer) ? pointer : fileId;
+    const ext = U.fileExtFromMime(fileInfo.meta?.mime_type || '') || '.bin';
+    const name =
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+      `${U.sanitize(fileId || pointer)}${ext}`;
+    const res = await gmFetchBlob(url);
+    return { blob: res.blob, mime: res.mime || fileInfo.meta?.mime_type || '', filename: U.sanitize(name) };
+  }
+
+  if (pointer && pointer.startsWith('sandbox:')) {
+    if (!convId || !messageId) throw new Error('sandbox pointer 缺少 conversation/message id');
+    return downloadSandboxFileBlob({ conversationId: convId, messageId, sandboxPath: pointer });
+  }
+
+  if (!Cred.token) {
+    const ok = await Cred.ensureViaSession();
+    if (!ok) throw new Error('没有 accessToken，无法下载文件');
+  }
+  const headers = Cred.getAuthHeaders();
+  if (projectId) headers.set('chatgpt-project-id', projectId);
+
+  const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
+  let resp;
+  if (downloadResult instanceof Response) {
+    resp = downloadResult;
+  } else if (typeof downloadResult === 'string') {
+    const res = await gmFetchBlob(downloadResult);
+    const fname =
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+      `${fileId}${U.fileExtFromMime(fileInfo.meta?.mime_type || '') || ''}`;
+    return {
+      blob: res.blob,
+      mime: res.mime || fileInfo.meta?.mime_type || '',
+      filename: U.sanitize(fname),
+    };
+  } else {
+    throw new Error('无法获取 download_url');
+  }
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`下载失败 ${resp.status}: ${txt.slice(0, 120)}`);
+  }
+
+  const blob = await resp.blob();
+  const cd = resp.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i);
+  const mime =
+    (fileInfo.meta && (fileInfo.meta.mime_type || fileInfo.meta.file_type)) ||
+    resp.headers.get('Content-Type') ||
+    '';
+  const ext = U.fileExtFromMime(mime) || '.bin';
+  let name =
+    (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
+    (m && decodeURIComponent(m[1])) ||
+    `${fileId}${ext}`;
+  name = U.sanitize(name);
+  return { blob, mime, filename: name };
+}
