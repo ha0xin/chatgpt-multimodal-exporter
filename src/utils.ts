@@ -123,3 +123,12 @@ export function gmFetchBlob(url, headers) {
     });
   });
 }
+
+const HAS_EXT_RE = /\.[^./\\]+$/;
+
+export function inferFilename(name, fallbackId, mime) {
+  const base = U.sanitize(name || '') || U.sanitize(fallbackId || '') || 'file';
+  const ext = U.fileExtFromMime(mime || '');
+  if (!ext || HAS_EXT_RE.test(base)) return base;
+  return `${base}${ext}`;
+}

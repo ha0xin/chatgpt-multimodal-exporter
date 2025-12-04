@@ -1,12 +1,7 @@
 // @ts-nocheck
 
 import { Cred } from './cred';
-import {
-  U,
-  gmDownload,
-  gmFetchBlob,
-  saveBlob,
-} from './utils';
+import { U, gmDownload, gmFetchBlob, saveBlob, inferFilename } from './utils';
 import {
   downloadSandboxFile,
   downloadSandboxFileBlob,
@@ -21,9 +16,11 @@ export async function downloadPointerOrFile(fileInfo) {
 
   if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
     const url = U.isInlinePointer(pointer) ? pointer : fileId;
-    const ext = U.fileExtFromMime('') || '.bin';
-    const name =
-      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || `${U.sanitize(fileId)}${ext}`;
+    const name = inferFilename(
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || '',
+      fileId || pointer,
+      ''
+    );
     await gmDownload(url, name);
     return;
   }
@@ -102,12 +99,14 @@ export async function downloadPointerOrFileAsBlob(fileInfo) {
 
   if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
     const url = U.isInlinePointer(pointer) ? pointer : fileId;
-    const ext = U.fileExtFromMime(fileInfo.meta?.mime_type || '') || '.bin';
-    const name =
-      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
-      `${U.sanitize(fileId || pointer)}${ext}`;
     const res = await gmFetchBlob(url);
-    return { blob: res.blob, mime: res.mime || fileInfo.meta?.mime_type || '', filename: U.sanitize(name) };
+    const mime = res.mime || fileInfo.meta?.mime_type || fileInfo.meta?.mime || '';
+    const filename = inferFilename(
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || '',
+      fileId || pointer,
+      mime
+    );
+    return { blob: res.blob, mime, filename };
   }
 
   if (pointer && pointer.startsWith('sandbox:')) {
@@ -128,13 +127,16 @@ export async function downloadPointerOrFileAsBlob(fileInfo) {
     resp = downloadResult;
   } else if (typeof downloadResult === 'string') {
     const res = await gmFetchBlob(downloadResult);
-    const fname =
-      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
-      `${fileId}${U.fileExtFromMime(fileInfo.meta?.mime_type || '') || ''}`;
+    const mime = res.mime || fileInfo.meta?.mime_type || fileInfo.meta?.mime || '';
+    const fname = inferFilename(
+      (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || '',
+      fileId,
+      mime
+    );
     return {
       blob: res.blob,
-      mime: res.mime || fileInfo.meta?.mime_type || '',
-      filename: U.sanitize(fname),
+      mime,
+      filename: fname,
     };
   } else {
     throw new Error('无法获取 download_url');
@@ -152,11 +154,10 @@ export async function downloadPointerOrFileAsBlob(fileInfo) {
     (fileInfo.meta && (fileInfo.meta.mime_type || fileInfo.meta.file_type)) ||
     resp.headers.get('Content-Type') ||
     '';
-  const ext = U.fileExtFromMime(mime) || '.bin';
-  let name =
-    (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
-    (m && decodeURIComponent(m[1])) ||
-    `${fileId}${ext}`;
-  name = U.sanitize(name);
+  const name = inferFilename(
+    (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || (m && decodeURIComponent(m[1])) || '',
+    fileId,
+    mime
+  );
   return { blob, mime, filename: name };
 }

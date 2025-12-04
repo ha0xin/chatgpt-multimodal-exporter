@@ -1,7 +1,7 @@
 // @ts-nocheck
 
 import { Cred } from './cred';
-import { U, gmDownload, gmFetchBlob } from './utils';
+import { U, gmDownload, gmFetchBlob, inferFilename } from './utils';
 
 export async function fetchConversation(id, projectId) {
   if (!Cred.token) {
@@ -95,9 +95,9 @@ export async function downloadSandboxFileBlob({ conversationId, messageId, sandb
   }
   const dl = j.download_url;
   if (!dl) throw new Error('sandbox download_url 缺失');
-  const fname = U.sanitize(j.file_name || sandboxPath.split('/').pop() || 'sandbox_file');
   const gmHeaders = {};
   const res = await gmFetchBlob(dl, gmHeaders);
+  const fname = inferFilename(j.file_name || sandboxPath.split('/').pop() || 'sandbox_file', sandboxPath, res.mime || '');
   return { blob: res.blob, mime: res.mime || '', filename: fname };
 }
 
