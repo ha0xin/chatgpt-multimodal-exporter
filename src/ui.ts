@@ -29,20 +29,13 @@ function showBatchExportDialog() {
   const status = U.ce('div', { className: 'cgptx-chip', textContent: '加载会话列表…' });
   const opts = U.ce('div', {
     className: 'cgptx-modal-actions',
-    style: 'justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;',
+    style: 'justify-content:flex-start;align-items:center;flex-wrap:wrap;gap:10px;',
   });
   const optAttachLabel = U.ce('label', { style: 'display:flex;align-items:center;gap:6px;' });
   const optAttachments = U.ce('input', { type: 'checkbox', checked: true });
   const optTxt = U.ce('span', { textContent: '包含附件（ZIP）' });
   optAttachLabel.append(optAttachments, optTxt);
-  const projectWrap = U.ce('div', { style: 'display:flex;align-items:center;gap:8px;' });
-  const projectLabel = U.ce('span', { textContent: '项目筛选：' });
-  const projectSelect = U.ce('select', {
-    style:
-      'background:#0b1220;border:1px solid #1f2937;color:#e5e7eb;padding:6px 10px;border-radius:10px;min-width:160px;',
-  });
-  projectWrap.append(projectLabel, projectSelect);
-  opts.append(projectWrap, optAttachLabel);
+  opts.append(optAttachLabel);
 
   const listWrap = U.ce('div', {
     className: 'cgptx-list',
@@ -62,9 +55,9 @@ function showBatchExportDialog() {
   });
 
   let listData = null;
-  let currentProjectId = '';
   const selectedSet = new Set();
-  let checkboxes = [];
+  let itemCheckboxes = [];
+  let groupStates = [];
   const cancelRef = { cancel: false };
   const makeKey = (projectId, id) => `${projectId || 'root'}::${id}`;
   const parseKey = (key) => {
@@ -72,6 +65,16 @@ function showBatchExportDialog() {
     const pid = key.slice(0, idx);
     const id = key.slice(idx + 2);
     return { id, projectId: pid === 'root' ? null : pid };
+  };
+  const refreshGroupHeaders = () => {
+    groupStates.forEach((g) => {
+      const keys = g.items.map((it) => makeKey(g.projectId, it.id));
+      const selCount = keys.filter((k) => selectedSet.has(k)).length;
+      const all = keys.length > 0 && selCount === keys.length;
+      const some = selCount > 0 && selCount < keys.length;
+      g.headerCb.checked = all;
+      g.headerCb.indeterminate = some;
+    });
   };
 
   const setStatus = (txt) => {
@@ -96,49 +99,127 @@ function showBatchExportDialog() {
     });
   };
 
+  const collectAllKeys = (data) => {
+    const keys = [];
+    getRootsList(data).forEach((it) => keys.push(makeKey('', it.id)));
+    (data.projects || []).forEach((p) => {
+      (p.convs || []).forEach((c) => keys.push(makeKey(p.projectId, c.id)));
+    });
+    return keys;
+  };
+
   const renderList = (data) => {
     listWrap.innerHTML = '';
-    checkboxes = [];
+    itemCheckboxes = [];
+    groupStates = [];
+
+    const groups = [];
     const rootsList = getRootsList(data);
-    const project = (data.projects || []).find((p) => p.projectId === currentProjectId);
-    const items = currentProjectId ? project?.convs || [] : rootsList;
-    const renderItems = items && items.length ? items : [];
-    renderItems.forEach((it) => {
-      const row = U.ce('div', { className: 'cgptx-item' });
-      const key = makeKey(currentProjectId, it.id);
-      const checked = selectedSet.has(key);
-      const cb = U.ce('input', {
-        type: 'checkbox',
-        checked,
-        defaultChecked: checked,
-        'data-id': it.id,
-        'data-project': currentProjectId || '',
+    if (rootsList.length) groups.push({ label: '无项目（个人会话）', projectId: '', items: rootsList });
+    (data.projects || []).forEach((p) => {
+      const convs = Array.isArray(p.convs) ? p.convs : [];
+      groups.push({
+        label: p.projectName || p.projectId || '未命名项目',
+        projectId: p.projectId,
+        items: convs,
       });
-      cb.addEventListener('change', () => {
-        if (cb.checked) selectedSet.add(key);
-        else selectedSet.delete(key);
-      });
-      const body = U.ce('div');
-      const titleEl = U.ce('div', { className: 'title', textContent: it.title || it.id });
-      body.append(titleEl);
-      row.append(cb, body);
-      listWrap.append(row);
-      checkboxes.push(cb);
     });
-    const projectName =
-      currentProjectId && project ? project.projectName || project.projectId : '无项目（个人会话）';
-    setStatus(`已加载：${projectName} - ${renderItems.length} 条`);
+
+    const collapsed = new Map();
+
+    const addGroup = (label, projectId, items) => {
+      const groupWrap = U.ce('div', { className: 'cgptx-group' });
+      const header = U.ce('div', { className: 'cgptx-group-header' });
+      const arrow = U.ce('span', { className: 'cgptx-arrow', textContent: collapsed.get(projectId) ? '▶' : '▼' });
+      const cb = U.ce('input', { type: 'checkbox' });
+      const titleEl = U.ce('div', { className: 'group-title', textContent: label });
+      const countEl = U.ce('div', { className: 'group-count', textContent: `${items.length} 条` });
+      header.append(arrow, cb, titleEl, countEl);
+      groupWrap.append(header);
+
+      const list = U.ce('div', {
+        className: 'cgptx-group-list',
+        style: collapsed.get(projectId) ? 'display:none;' : '',
+      });
+
+      const groupObj = { projectId, items, headerCb: cb, listEl: list };
+      groupStates.push(groupObj);
+
+      const toggleCollapse = () => {
+        const isCollapsed = list.style.display === 'none';
+        list.style.display = isCollapsed ? '' : 'none';
+        arrow.textContent = isCollapsed ? '▼' : '▶';
+      };
+
+      arrow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleCollapse();
+      });
+      titleEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleCollapse();
+      });
+
+      cb.addEventListener('change', () => {
+        const keys = items.map((it) => makeKey(projectId, it.id));
+        if (cb.indeterminate || !cb.checked) {
+          keys.forEach((k) => selectedSet.delete(k));
+        }
+        if (cb.checked) {
+          keys.forEach((k) => selectedSet.add(k));
+        }
+        list.querySelectorAll('input[type="checkbox"]').forEach((c) => {
+          c.checked = cb.checked;
+        });
+        refreshGroupHeaders();
+        setStatus(`已选 ${selectedSet.size} 条`);
+      });
+
+      items.forEach((it) => {
+        const row = U.ce('div', { className: 'cgptx-item' });
+        const key = makeKey(projectId, it.id);
+        const checked = selectedSet.has(key);
+        const itemCb = U.ce('input', {
+          type: 'checkbox',
+          checked,
+          defaultChecked: checked,
+          'data-id': it.id,
+          'data-project': projectId || '',
+        });
+        itemCb.addEventListener('change', () => {
+          if (itemCb.checked) selectedSet.add(key);
+          else selectedSet.delete(key);
+          refreshGroupHeaders();
+          setStatus(`已选 ${selectedSet.size} 条`);
+        });
+        const body = U.ce('div');
+        const titleEl = U.ce('div', { className: 'title', textContent: it.title || it.id });
+        body.append(titleEl);
+        row.append(itemCb, body);
+        list.append(row);
+        itemCheckboxes.push(itemCb);
+      });
+
+      refreshGroupHeaders();
+      groupWrap.append(list);
+      listWrap.append(groupWrap);
+    };
+
+    groups.forEach((g) => addGroup(g.label, g.projectId, g.items));
+    setStatus(`共 ${groups.reduce((n, g) => n + g.items.length, 0)} 条，已选 ${selectedSet.size}`);
   };
 
   const toggleAll = () => {
-    if (!checkboxes.length) return;
-    const allChecked = checkboxes.every((c) => c.checked);
-    checkboxes.forEach((c) => {
-      c.checked = !allChecked;
-      const key = makeKey(c.getAttribute('data-project') || '', c.getAttribute('data-id') || '');
-      if (c.checked) selectedSet.add(key);
-      else selectedSet.delete(key);
-    });
+    if (!listData) return;
+    const allKeys = collectAllKeys(listData);
+    const allChecked = allKeys.every((k) => selectedSet.has(k));
+    if (allChecked) {
+      allKeys.forEach((k) => selectedSet.delete(k));
+    } else {
+      allKeys.forEach((k) => selectedSet.add(k));
+    }
+    renderList(listData);
+    setStatus(`已选 ${selectedSet.size} 条`);
   };
   btnToggle.addEventListener('click', toggleAll);
 
@@ -161,11 +242,15 @@ function showBatchExportDialog() {
 
     const projectMapForTasks = new Map();
     (listData.projects || []).forEach((p) => projectMapForTasks.set(p.projectId, p));
-    const selectedProjects = tasks
-      .map((t) => t.projectId)
-      .filter((pid) => !!pid)
-      .map((pid) => projectMapForTasks.get(pid))
-      .filter(Boolean);
+    const seenProj = new Set();
+    const selectedProjects = [];
+    tasks.forEach((t) => {
+      if (!t.projectId) return;
+      if (seenProj.has(t.projectId)) return;
+      seenProj.add(t.projectId);
+      const p = projectMapForTasks.get(t.projectId);
+      if (p) selectedProjects.push(p);
+    });
     const selectedRootIds = tasks.filter((t) => !t.projectId).map((t) => t.id);
 
     try {
@@ -209,20 +294,6 @@ function showBatchExportDialog() {
       const res = await collectAllConversationTasks((pct, text) => setProgress(pct, text));
       listData = res;
       seedSelection(res);
-      projectSelect.innerHTML = '';
-      const optionRoot = U.ce('option', { value: '', textContent: '无项目（个人会话）' });
-      projectSelect.append(optionRoot);
-      (res.projects || []).forEach((p) => {
-        const name = p.projectName || p.projectId || '未命名项目';
-        const opt = U.ce('option', { value: p.projectId, textContent: name });
-        projectSelect.append(opt);
-      });
-      projectSelect.addEventListener('change', () => {
-        currentProjectId = projectSelect.value;
-        renderList(listData);
-      });
-      currentProjectId = '';
-      projectSelect.value = '';
       renderList(res);
       setStatus('请选择要导出的会话');
     } catch (e) {
@@ -462,6 +533,36 @@ export function mountUI() {
         font-weight: 600;
         color: #f3f4f6;
         line-height: 1.35;
+      }
+      .cgptx-group {
+        border-bottom: 1px solid #1f2937;
+      }
+      .cgptx-group:last-child {
+        border-bottom: none;
+      }
+      .cgptx-group-header {
+        display: grid;
+        grid-template-columns: 18px 20px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        background: #0d1526;
+        cursor: pointer;
+      }
+      .cgptx-group-list {
+        border-top: 1px solid #1f2937;
+      }
+      .cgptx-arrow {
+        font-size: 12px;
+        color: #9ca3af;
+      }
+      .group-title {
+        font-weight: 600;
+        color: #e5e7eb;
+      }
+      .group-count {
+        color: #6b7280;
+        font-size: 12px;
       }
       .cgptx-item .meta {
         color: #9ca3af;
