@@ -1,6 +1,6 @@
 import { Cred } from './cred';
 import { fetchConversation } from './api';
-import { U } from './utils';
+import { sleep } from './utils';
 import { Project, Task, Conversation } from './types';
 
 export async function listConversationsPage({
@@ -125,7 +125,7 @@ export async function collectAllConversationTasks(
       if (progressCb) progressCb(3, `个人会话：${offset + arr.length}${page?.total ? `/${page.total}` : ''}`);
       if (!arr.length || arr.length < limit || (page && page.total !== null && offset + limit >= page.total)) break;
       offset += limit;
-      await U.sleep(120);
+      await sleep(120);
     }
   };
 
@@ -181,7 +181,7 @@ export async function collectAllConversationTasks(
         if (progressCb) progressCb(5, `项目 ${pid}：${cursor + arr.length}${page?.total ? `/${page.total}` : ''}`);
         if (!arr.length || arr.length < limit || (page && page.total !== null && cursor + limit >= page.total)) break;
         cursor += limit;
-        await U.sleep(120);
+        await sleep(120);
       }
     }
   } catch (e) {
@@ -208,7 +208,7 @@ export async function fetchConvWithRetry(
       lastErr = e;
       attempt++;
       const delay = 400 * Math.pow(2, attempt - 1);
-      await U.sleep(delay);
+      await sleep(delay);
     }
   }
   throw lastErr || new Error('fetch_failed');

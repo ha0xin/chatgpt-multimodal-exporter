@@ -3,23 +3,23 @@ import JSZip from 'jszip';
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
 import { fetchConversationsBatch } from './conversations';
-import { U, BATCH_CONCURRENCY } from './utils';
+import { sanitize, BATCH_CONCURRENCY } from './utils';
 import { Task, Project, BatchExportSummary, Conversation } from './types';
 
 function buildProjectFolderNames(projects: Project[]): Map<string, string> {
   const map = new Map<string, string>();
   const counts: Record<string, number> = {};
   projects.forEach((p) => {
-    const base = U.sanitize(p.projectName || p.projectId || 'project');
+    const base = sanitize(p.projectName || p.projectId || 'project');
     counts[base] = (counts[base] || 0) + 1;
   });
   projects.forEach((p) => {
-    let baseName = U.sanitize(p.projectName || p.projectId || 'project');
+    let baseName = sanitize(p.projectName || p.projectId || 'project');
     if (counts[baseName] > 1) {
       const stamp = p.createdAt ? p.createdAt.replace(/[^\d]/g, '').slice(0, 14) : '';
       if (stamp) {
         const raw = p.projectName || baseName;
-        baseName = U.sanitize(`${raw}_${stamp}`);
+        baseName = sanitize(`${raw}_${stamp}`);
       }
     }
     map.set(p.projectId, baseName || 'project');
@@ -92,7 +92,7 @@ export async function runBatchExport({
     let baseFolderAtt = rootAttFolder;
     let seq = '';
     if (isProject && t.projectId) {
-      const fname = folderNameByProjectId.get(t.projectId) || U.sanitize(t.projectId || 'project');
+      const fname = folderNameByProjectId.get(t.projectId) || sanitize(t.projectId || 'project');
       let cache = projCache.get(t.projectId);
       if (!cache) {
         const rootFolder = zip.folder(`projects/${fname}`);
@@ -111,7 +111,7 @@ export async function runBatchExport({
       seq = String(idxRoot).padStart(3, '0');
     }
 
-    const title = U.sanitize(data?.title || '');
+    const title = sanitize(data?.title || '');
     const baseName = `${seq}_${title || 'chat'}_${t.id}`;
     const jsonName = `${baseName}.json`;
     if (baseFolderJson) {
@@ -142,7 +142,7 @@ export async function runBatchExport({
       let finalName = '';
       try {
         const res = await downloadPointerOrFileAsBlob(c);
-        finalName = res.filename || `${U.sanitize(pointerKey) || 'file'}.bin`;
+        finalName = res.filename || `${sanitize(pointerKey) || 'file'}.bin`;
         if (usedNames.has(finalName)) {
           let cnt = 2;
           while (usedNames.has(`${cnt}_${finalName}`)) cnt++;

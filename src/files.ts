@@ -1,4 +1,4 @@
-import { U } from './utils';
+import { pointerToFileId } from './utils';
 import { Conversation, FileCandidate, Message } from './types';
 
 export function collectFileCandidates(conv: Conversation): FileCandidate[] {
@@ -30,7 +30,7 @@ export function collectFileCandidates(conv: Conversation): FileCandidate[] {
       .forEach((ref) => {
         if (ref?.file_id) add(ref.file_id, { source: 'cref', meta: ref, message_id: msg.id });
         if (ref?.asset_pointer) {
-          const fid = U.pointerToFileId(ref.asset_pointer);
+          const fid = pointerToFileId(ref.asset_pointer);
           add(fid, { source: 'cref-pointer', pointer: ref.asset_pointer, meta: ref, message_id: msg.id });
         }
       });
@@ -44,7 +44,7 @@ export function collectFileCandidates(conv: Conversation): FileCandidate[] {
     if (Array.isArray(c.parts)) {
       c.parts.forEach((part) => {
         if (part && typeof part === 'object' && part.content_type && part.asset_pointer) {
-          const fid = U.pointerToFileId(part.asset_pointer);
+          const fid = pointerToFileId(part.asset_pointer);
           add(fid, { source: part.content_type, pointer: part.asset_pointer, meta: part, message_id: msg.id });
         }
         if (
@@ -55,12 +55,12 @@ export function collectFileCandidates(conv: Conversation): FileCandidate[] {
           part.audio_asset_pointer.asset_pointer
         ) {
           const ap = part.audio_asset_pointer;
-          const fid = U.pointerToFileId(ap.asset_pointer);
+          const fid = pointerToFileId(ap.asset_pointer);
           add(fid, { source: 'voice-audio', pointer: ap.asset_pointer, meta: ap, message_id: msg.id });
         }
         if (part && typeof part === 'object' && part.audio_asset_pointer && part.audio_asset_pointer.asset_pointer) {
           const ap = part.audio_asset_pointer;
-          const fid = U.pointerToFileId(ap.asset_pointer);
+          const fid = pointerToFileId(ap.asset_pointer);
           add(fid, { source: 'voice-audio', pointer: ap.asset_pointer, meta: ap, message_id: msg.id });
         }
       });

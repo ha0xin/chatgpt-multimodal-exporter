@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { U, saveJSON } from '../../utils';
+import { convId, projectId, sanitize, saveJSON } from '../../utils';
 import { Cred } from '../../cred';
 import { fetchConversation } from '../../api';
 import { extractImages, collectFileCandidates } from '../../files';
@@ -34,8 +34,8 @@ export function FloatingEntry() {
     }, []);
 
     const handleJsonExport = async () => {
-        const id = U.convId();
-        const pid = U.projectId();
+        const id = convId();
+        const pid = projectId();
         if (!id) {
             alert('未检测到会话 ID，请在具体对话页面使用（URL 中应包含 /c/xxxx）。');
             return;
@@ -53,7 +53,7 @@ export function FloatingEntry() {
 
             extractImages(data);
 
-            const title = U.sanitize(data?.title || '');
+            const title = sanitize(data?.title || '');
             const filename = `${title || 'chat'}_${id}.json`;
             saveJSON(data, filename);
             setJsonTitle('导出完成 ✅（点击可重新导出）');
@@ -67,8 +67,8 @@ export function FloatingEntry() {
     };
 
     const handleFilesDownload = async () => {
-        const id = U.convId();
-        const pid = U.projectId();
+        const id = convId();
+        const pid = projectId();
         if (!id) {
             alert('未检测到会话 ID，请在具体对话页面使用（URL 中应包含 /c/xxxx）。');
             return;

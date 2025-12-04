@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { U } from '../../utils';
+import { formatBytes } from '../../utils';
 import { FileCandidate } from '../../types';
 
 interface FilePreviewDialogProps {
@@ -70,7 +70,7 @@ export function FilePreviewDialog({ candidates, onConfirm, onClose }: FilePrevie
                         if (info.file_id) metaParts.push(`file_id: ${info.file_id}`);
                         if (info.pointer && info.pointer !== info.file_id) metaParts.push(`pointer: ${info.pointer}`);
                         if (mime) metaParts.push(`mime: ${mime}`);
-                        if (size) metaParts.push(`大小: ${U.formatBytes(size)}`);
+                        if (size) metaParts.push(`大小: ${formatBytes(size)}`);
 
                         return (
                             <div className="cgptx-item" key={idx}>
