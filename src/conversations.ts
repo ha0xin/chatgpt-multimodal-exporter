@@ -110,13 +110,26 @@ export async function collectAllConversationTasks(progressCb) {
         console.warn('[ChatGPT-Multimodal-Exporter] gizmos sidebar failed', e);
         return null;
       });
-      const gizmos = Array.isArray(sidebar?.gizmos) ? sidebar.gizmos : [];
-      gizmos.forEach((g) => {
+      const gizmosRaw = Array.isArray(sidebar?.gizmos) ? sidebar.gizmos : [];
+      const itemsRaw = Array.isArray(sidebar?.items) ? sidebar.items : [];
+
+      const pushGizmo = (g) => {
         if (!g || !g.id) return;
         projectIds.add(g.id);
         const convs = Array.isArray(g.conversations) ? g.conversations : [];
         convs.forEach((c) => addProjectConv(g.id, c.id, c.title));
+      };
+
+      gizmosRaw.forEach((g) => pushGizmo(g));
+
+      itemsRaw.forEach((it) => {
+        const g = it?.gizmo?.gizmo || it?.gizmo || null;
+        if (!g || !g.id) return;
+        pushGizmo(g);
+        const convs = it?.conversations?.items;
+        if (Array.isArray(convs)) convs.forEach((c) => addProjectConv(g.id, c.id, c.title));
       });
+
       cursor = sidebar && sidebar.cursor ? sidebar.cursor : null;
     } while (cursor);
 
