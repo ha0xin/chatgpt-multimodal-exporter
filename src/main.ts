@@ -1,10 +1,10 @@
 
 
 import { mountUI } from './ui';
-import { U } from './utils';
+import { isHostOK } from './utils';
 
 function boot() {
-  if (!U.isHostOK()) return;
+  if (!isHostOK()) return;
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     mountUI();
   } else {

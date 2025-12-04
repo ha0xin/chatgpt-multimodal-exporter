@@ -1,5 +1,5 @@
 import { Cred } from './cred';
-import { U, gmDownload, gmFetchBlob, saveBlob, inferFilename } from './utils';
+import { gmDownload, gmFetchBlob, saveBlob, inferFilename, isInlinePointer, projectId, fileExtFromMime, sanitize } from './utils';
 import {
   downloadSandboxFile,
   downloadSandboxFileBlob,
@@ -13,8 +13,8 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
   const convId = fileInfo.conversation_id || '';
   const messageId = fileInfo.message_id || '';
 
-  if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
-    const url = U.isInlinePointer(pointer) ? pointer : fileId;
+  if (isInlinePointer(fileId) || isInlinePointer(pointer)) {
+    const url = isInlinePointer(pointer) ? pointer : fileId;
     const name = inferFilename(
       (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) || '',
       fileId || pointer,
@@ -38,7 +38,7 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
     if (!ok) throw new Error('没有 accessToken，无法下载文件');
   }
   const headers = Cred.getAuthHeaders();
-  const pid = U.projectId();
+  const pid = projectId();
   if (pid) headers.set('chatgpt-project-id', pid);
 
   const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
@@ -48,7 +48,7 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
   } else if (typeof downloadResult === 'string') {
     const fname =
       (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
-      `${fileId}${U.fileExtFromMime('') || ''}`;
+      `${fileId}${fileExtFromMime('') || ''}`;
     await gmDownload(downloadResult, fname);
     return;
   } else {
@@ -67,12 +67,12 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
     (fileInfo.meta && (fileInfo.meta.mime_type || fileInfo.meta.file_type)) ||
     resp.headers.get('Content-Type') ||
     '';
-  const ext = U.fileExtFromMime(mime) || '.bin';
+  const ext = fileExtFromMime(mime) || '.bin';
   let name =
     (fileInfo.meta && (fileInfo.meta.name || fileInfo.meta.file_name)) ||
     (m && decodeURIComponent(m[1])) ||
     `${fileId}${ext}`;
-  name = U.sanitize(name);
+  name = sanitize(name);
   saveBlob(blob, name);
 }
 
@@ -98,8 +98,8 @@ export async function downloadPointerOrFileAsBlob(
   const projectId = fileInfo.project_id || '';
   const messageId = fileInfo.message_id || '';
 
-  if (U.isInlinePointer(fileId) || U.isInlinePointer(pointer)) {
-    const url = U.isInlinePointer(pointer) ? pointer : fileId;
+  if (isInlinePointer(fileId) || isInlinePointer(pointer)) {
+    const url = isInlinePointer(pointer) ? pointer : fileId;
     const res = await gmFetchBlob(url);
     const mime = res.mime || fileInfo.meta?.mime_type || fileInfo.meta?.mime || '';
     const filename = inferFilename(
