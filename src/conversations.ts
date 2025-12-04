@@ -60,13 +60,22 @@ export async function collectAllConversationTasks(progressCb) {
     if (!rootInfo.has(id)) rootInfo.set(id, { id, title: title || '' });
   };
 
-  const addProjectConv = (projectId, id, title) => {
-    if (!projectId || !id) return;
+  const ensureProject = (projectId, projectName) => {
+    if (!projectId) return null;
     let rec = projectMap.get(projectId);
     if (!rec) {
-      rec = { projectId, projectName: '', createdAt: '', convs: [] };
+      rec = { projectId, projectName: projectName || '', createdAt: '', convs: [] };
       projectMap.set(projectId, rec);
+    } else if (projectName && !rec.projectName) {
+      rec.projectName = projectName;
     }
+    return rec;
+  };
+
+  const addProjectConv = (projectId, id, title, projectName) => {
+    if (!projectId || !id) return;
+    const rec = ensureProject(projectId, projectName);
+    if (!rec) return;
     if (!rec.convs.some((x) => x.id === id)) {
       rec.convs.push({ id, title: title || '' });
     }
@@ -116,8 +125,9 @@ export async function collectAllConversationTasks(progressCb) {
       const pushGizmo = (g) => {
         if (!g || !g.id) return;
         projectIds.add(g.id);
+        ensureProject(g.id, g.display?.name || g.name || '');
         const convs = Array.isArray(g.conversations) ? g.conversations : [];
-        convs.forEach((c) => addProjectConv(g.id, c.id, c.title));
+        convs.forEach((c) => addProjectConv(g.id, c.id, c.title, g.display?.name || g.name));
       };
 
       gizmosRaw.forEach((g) => pushGizmo(g));
@@ -127,7 +137,8 @@ export async function collectAllConversationTasks(progressCb) {
         if (!g || !g.id) return;
         pushGizmo(g);
         const convs = it?.conversations?.items;
-        if (Array.isArray(convs)) convs.forEach((c) => addProjectConv(g.id, c.id, c.title));
+        if (Array.isArray(convs))
+          convs.forEach((c) => addProjectConv(g.id, c.id, c.title, g.display?.name || g.name));
       });
 
       cursor = sidebar && sidebar.cursor ? sidebar.cursor : null;

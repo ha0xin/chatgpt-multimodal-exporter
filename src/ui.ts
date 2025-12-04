@@ -27,12 +27,22 @@ function showBatchExportDialog() {
   header.append(title, actions);
 
   const status = U.ce('div', { className: 'cgptx-chip', textContent: '加载会话列表…' });
-  const opts = U.ce('div', { className: 'cgptx-modal-actions', style: 'justify-content:flex-start;' });
+  const opts = U.ce('div', {
+    className: 'cgptx-modal-actions',
+    style: 'justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;',
+  });
   const optAttachLabel = U.ce('label', { style: 'display:flex;align-items:center;gap:6px;' });
   const optAttachments = U.ce('input', { type: 'checkbox', checked: true });
   const optTxt = U.ce('span', { textContent: '包含附件（ZIP）' });
   optAttachLabel.append(optAttachments, optTxt);
-  opts.append(optAttachLabel);
+  const projectWrap = U.ce('div', { style: 'display:flex;align-items:center;gap:8px;' });
+  const projectLabel = U.ce('span', { textContent: '项目筛选：' });
+  const projectSelect = U.ce('select', {
+    style:
+      'background:#0b1220;border:1px solid #1f2937;color:#e5e7eb;padding:6px 10px;border-radius:10px;min-width:160px;',
+  });
+  projectWrap.append(projectLabel, projectSelect);
+  opts.append(projectWrap, optAttachLabel);
 
   const listWrap = U.ce('div', {
     className: 'cgptx-list',
@@ -52,8 +62,17 @@ function showBatchExportDialog() {
   });
 
   let listData = null;
+  let currentProjectId = '';
+  const selectedSet = new Set();
   let checkboxes = [];
   const cancelRef = { cancel: false };
+  const makeKey = (projectId, id) => `${projectId || 'root'}::${id}`;
+  const parseKey = (key) => {
+    const idx = key.indexOf('::');
+    const pid = key.slice(0, idx);
+    const id = key.slice(idx + 2);
+    return { id, projectId: pid === 'root' ? null : pid };
+  };
 
   const setStatus = (txt) => {
     status.textContent = txt;
@@ -69,60 +88,66 @@ function showBatchExportDialog() {
     return [];
   };
 
+  const seedSelection = (data) => {
+    selectedSet.clear();
+    getRootsList(data).forEach((it) => selectedSet.add(makeKey('', it.id)));
+    (data.projects || []).forEach((p) => {
+      (p.convs || []).forEach((c) => selectedSet.add(makeKey(p.projectId, c.id)));
+    });
+  };
+
   const renderList = (data) => {
     listWrap.innerHTML = '';
     checkboxes = [];
-    const addGroup = (titleText, items, projectId) => {
-      const group = U.ce('div', {
-        style: 'border-bottom:1px solid #1f2937;padding:10px 8px;display:flex;flex-direction:column;gap:8px;',
-      });
-      const h = U.ce('div', { className: 'title', textContent: titleText });
-      group.append(h);
-      items.forEach((it) => {
-        const row = U.ce('div', { className: 'cgptx-item' });
-        const cb = U.ce('input', {
-          type: 'checkbox',
-          checked: true,
-          defaultChecked: true,
-          'data-id': it.id,
-          'data-project': projectId || '',
-        });
-        const body = U.ce('div');
-        const titleEl = U.ce('div', { className: 'title', textContent: it.title || it.id });
-        const metaEl = U.ce('div', {
-          className: 'meta',
-          textContent: projectId ? `项目: ${projectId}` : '个人会话',
-        });
-        body.append(titleEl, metaEl);
-        row.append(cb, body);
-        group.append(row);
-        checkboxes.push(cb);
-      });
-      listWrap.append(group);
-    };
-
     const rootsList = getRootsList(data);
-    if (rootsList.length) addGroup('根目录会话', rootsList, '');
-    (data.projects || []).forEach((p) => {
-      const convs = Array.isArray(p.convs) ? p.convs : [];
-      if (!convs.length) return;
-      addGroup(`项目：${p.projectName || p.projectId}`, convs, p.projectId);
+    const project = (data.projects || []).find((p) => p.projectId === currentProjectId);
+    const items = currentProjectId ? project?.convs || [] : rootsList;
+    const renderItems = items && items.length ? items : [];
+    renderItems.forEach((it) => {
+      const row = U.ce('div', { className: 'cgptx-item' });
+      const key = makeKey(currentProjectId, it.id);
+      const checked = selectedSet.has(key);
+      const cb = U.ce('input', {
+        type: 'checkbox',
+        checked,
+        defaultChecked: checked,
+        'data-id': it.id,
+        'data-project': currentProjectId || '',
+      });
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedSet.add(key);
+        else selectedSet.delete(key);
+      });
+      const body = U.ce('div');
+      const titleEl = U.ce('div', { className: 'title', textContent: it.title || it.id });
+      body.append(titleEl);
+      row.append(cb, body);
+      listWrap.append(row);
+      checkboxes.push(cb);
     });
-    setStatus(`已加载：根会话 ${rootsList.length}，项目 ${data.projects.length}`);
+    const projectName =
+      currentProjectId && project ? project.projectName || project.projectId : '无项目（个人会话）';
+    setStatus(`已加载：${projectName} - ${renderItems.length} 条`);
   };
 
   const toggleAll = () => {
     if (!checkboxes.length) return;
     const allChecked = checkboxes.every((c) => c.checked);
-    checkboxes.forEach((c) => (c.checked = !allChecked));
+    checkboxes.forEach((c) => {
+      c.checked = !allChecked;
+      const key = makeKey(c.getAttribute('data-project') || '', c.getAttribute('data-id') || '');
+      if (c.checked) selectedSet.add(key);
+      else selectedSet.delete(key);
+    });
   };
   btnToggle.addEventListener('click', toggleAll);
 
   const startExport = async () => {
     if (!listData) return;
-    const liveBoxes = Array.from(listWrap.querySelectorAll('input[type="checkbox"]'));
-    const selectedIds = new Set(liveBoxes.filter((c) => c.checked).map((c) => c.getAttribute('data-id')));
-    if (!selectedIds.size) {
+    const tasks = Array.from(selectedSet)
+      .map((k) => parseKey(k))
+      .filter((t) => !!t.id);
+    if (!tasks.length) {
       alert('请至少选择一条会话');
       return;
     }
@@ -131,40 +156,6 @@ function showBatchExportDialog() {
     btnStop.disabled = false;
     btnToggle.disabled = true;
     setStatus('准备导出…');
-
-    const tasks = [];
-    const seen = new Set();
-    liveBoxes
-      .filter((c) => c.checked)
-      .forEach((c) => {
-        const id = c.getAttribute('data-id') || '';
-        const projectId = c.getAttribute('data-project') || null;
-        if (!id) return;
-        const key = `${projectId || 'root'}::${id}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        tasks.push({ id, projectId });
-      });
-    if (!tasks.length && liveBoxes.length) {
-      console.warn('[ChatGPT-Multimodal-Exporter] 未检测到选中项，兜底使用全选');
-      liveBoxes.forEach((c) => {
-        const id = c.getAttribute('data-id') || '';
-        const projectId = c.getAttribute('data-project') || null;
-        if (!id) return;
-        const key = `${projectId || 'root'}::${id}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        tasks.push({ id, projectId });
-      });
-    }
-    if (!tasks.length) {
-      console.warn('[ChatGPT-Multimodal-Exporter] 无任务：listData=', listData, 'checkboxes=', checkboxes);
-      alert('未能解析勾选的会话，请重试或刷新页面');
-      btnStart.disabled = false;
-      btnStop.disabled = true;
-      btnToggle.disabled = false;
-      return;
-    }
 
     const progressCb = (pct, txt) => setProgress(pct, txt || '');
 
@@ -217,6 +208,21 @@ function showBatchExportDialog() {
     try {
       const res = await collectAllConversationTasks((pct, text) => setProgress(pct, text));
       listData = res;
+      seedSelection(res);
+      projectSelect.innerHTML = '';
+      const optionRoot = U.ce('option', { value: '', textContent: '无项目（个人会话）' });
+      projectSelect.append(optionRoot);
+      (res.projects || []).forEach((p) => {
+        const name = p.projectName || p.projectId || '未命名项目';
+        const opt = U.ce('option', { value: p.projectId, textContent: name });
+        projectSelect.append(opt);
+      });
+      projectSelect.addEventListener('change', () => {
+        currentProjectId = projectSelect.value;
+        renderList(listData);
+      });
+      currentProjectId = '';
+      projectSelect.value = '';
       renderList(res);
       setStatus('请选择要导出的会话');
     } catch (e) {
@@ -443,11 +449,11 @@ export function mountUI() {
       }
       .cgptx-item {
         display: grid;
-        grid-template-columns: 26px 1fr;
-        gap: 10px;
-        padding: 10px 12px;
+        grid-template-columns: 22px 1fr;
+        gap: 8px;
+        padding: 6px 10px;
         border-bottom: 1px solid #1f2937;
-        align-items: start;
+        align-items: center;
       }
       .cgptx-item:last-child {
         border-bottom: none;
@@ -455,6 +461,7 @@ export function mountUI() {
       .cgptx-item .title {
         font-weight: 600;
         color: #f3f4f6;
+        line-height: 1.35;
       }
       .cgptx-item .meta {
         color: #9ca3af;
