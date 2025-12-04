@@ -1,5 +1,5 @@
 import { Cred } from './cred';
-import { U, gmDownload, gmFetchBlob, inferFilename } from './utils';
+import { projectId, sanitize, gmDownload, gmFetchBlob, inferFilename } from './utils';
 import { Conversation } from './types';
 
 export async function fetchConversation(id: string, projectId?: string): Promise<Conversation> {
@@ -50,7 +50,7 @@ export async function downloadSandboxFile({
     if (!ok) throw new Error('没有 accessToken，无法下载 sandbox 文件');
   }
   const headers = Cred.getAuthHeaders();
-  const pid = U.projectId();
+  const pid = projectId();
   if (pid) headers.set('chatgpt-project-id', pid);
 
   const params = new URLSearchParams({
@@ -71,7 +71,7 @@ export async function downloadSandboxFile({
   }
   const dl = j.download_url;
   if (!dl) throw new Error('sandbox download_url 缺失');
-  const fname = U.sanitize(j.file_name || sandboxPath.split('/').pop() || 'sandbox_file');
+  const fname = sanitize(j.file_name || sandboxPath.split('/').pop() || 'sandbox_file');
   await gmDownload(dl, fname);
 }
 
@@ -89,7 +89,7 @@ export async function downloadSandboxFileBlob({
     if (!ok) throw new Error('没有 accessToken，无法下载 sandbox 文件');
   }
   const headers = Cred.getAuthHeaders();
-  const pid = U.projectId();
+  const pid = projectId();
   if (pid) headers.set('chatgpt-project-id', pid);
 
   const params = new URLSearchParams({
