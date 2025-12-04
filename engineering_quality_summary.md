@@ -15,6 +15,11 @@
 *   **问题**: `src/ui.ts` 文件过于庞大（800+ 行），集成了 UI 渲染、事件处理、业务逻辑和状态管理。
 *   **影响**: 违反了单一职责原则，代码阅读困难，修改 UI 容易影响业务逻辑。
 *   **问题**: UI 构建依赖手动 DOM 操作（`U.ce`），缺乏声明式 UI 的清晰度。
+*   **问题**: `U` 工具类（Utility）承担了过多的职责，不仅包含通用工具函数，还混合了 DOM 操作、样式注入等逻辑，成为了一个难以维护的“上帝对象”。
+    *   **U 的罪行**:
+        *   **DOM 操作耦合**: `U.ce` (create element) 被大量用于构建 UI，导致 UI 代码充斥着命令式的 DOM API 调用，难以阅读和修改。
+        *   **样式注入混杂**: `U` 类中包含样式注入逻辑，使得样式与逻辑紧密耦合，难以复用和管理。
+        *   **类型定义模糊**: `U` 中的许多方法缺乏精确的类型定义，导致在使用时类型推断困难。
 
 ### 1.3 外部依赖与稳定性
 *   **问题**: 项目核心功能高度依赖 OpenAI 的内部未公开 API (`/backend-api/...`)。
@@ -44,6 +49,26 @@
     *   `src/ui/dialogs/`: 包含 `BatchExportDialog` 和 `FilePreviewDialog` 等业务弹窗组件。
 *   **入口重构**: `src/ui.ts` 现仅作为 UI 初始化的入口点，不再包含具体业务逻辑。
 
+
+## 2.2 已完成的重构工作 (Phase 3: Preact & Styles)
+
+针对“UI 构建依赖手动 DOM 操作”和“U 的罪行”，我们执行了第三阶段的重构，重点在于**引入 Preact 和 CSS 分离**。
+
+*   **引入 Preact**:
+    *   引入 `preact` 和 `@preact/preset-vite`，配置 TypeScript 支持 JSX。
+    *   **消除 U.ce**: 将 `FloatingEntry` (原 `miniEntry`), `FilePreviewDialog`, `BatchExportDialog` 全部重构为 Preact 组件。
+    *   **声明式 UI**: 使用 JSX 替代了原本复杂的 `U.ce` 嵌套调用，代码可读性显著提升。
+    *   **状态管理**: 利用 Preact Hooks (`useState`, `useEffect`) 管理组件状态，替代了原本分散的变量和手动 DOM 更新。
+
+*   **样式分离**:
+    *   创建 `src/style.css`，将原 `src/ui/styles.ts` 中的样式全部提取到独立的 CSS 文件中。
+    *   **消除 U 依赖**: 移除了 `src/ui/styles.ts` 中依赖 JS 注入样式的逻辑，现在通过 Vite 直接导入 CSS。
+
+*   **成果**:
+    *   `src/ui/miniEntry.ts` **已删除**。
+    *   `src/ui/styles.ts` **已删除**。
+    *   `src/ui/dialogs/*.ts` 仅保留极少量的挂载代码，不再包含 DOM 构建逻辑。
+    *   大幅减少了对 `U` 类的依赖，UI 代码更加现代化、模块化。
 
 ---
 
