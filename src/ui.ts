@@ -39,12 +39,17 @@ function showBatchExportDialog() {
 
   const listWrap = U.ce('div', {
     className: 'cgptx-list',
-    style: 'max-height:46vh;overflow:auto;border:1px solid #1f2937;border-radius:10px;',
+    style: 'max-height:46vh;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;',
   });
 
-  const progText = U.ce('div', { className: 'cgptx-chip', textContent: '' });
+  const progWrap = U.ce('div', { className: 'cgptx-progress-wrap', style: 'display:none' });
+  const progTrack = U.ce('div', { className: 'cgptx-progress-track' });
+  const progBar = U.ce('div', { className: 'cgptx-progress-bar' });
+  const progLabel = U.ce('div', { className: 'cgptx-progress-text' });
+  progTrack.append(progBar);
+  progWrap.append(progTrack, progLabel);
 
-  box.append(header, status, opts, listWrap, progText);
+  box.append(header, status, opts, listWrap, progWrap);
   overlay.append(box);
   document.body.append(overlay);
 
@@ -58,6 +63,7 @@ function showBatchExportDialog() {
   const selectedSet = new Set();
   let itemCheckboxes = [];
   let groupStates = [];
+  const collapsed = new Map();
   const cancelRef = { cancel: false };
   const makeKey = (projectId, id) => `${projectId || 'root'}::${id}`;
   const parseKey = (key) => {
@@ -81,7 +87,13 @@ function showBatchExportDialog() {
     status.textContent = txt;
   };
   const setProgress = (pct, txt) => {
-    progText.textContent = `${txt || ''} ${pct ? `(${pct}%)` : ''}`;
+    if (pct === 0 && !txt) {
+      progWrap.style.display = 'none';
+      return;
+    }
+    progWrap.style.display = 'flex';
+    progBar.style.width = `${pct || 0}%`;
+    progLabel.textContent = `${txt || ''} ${pct ? `(${pct}%)` : ''}`;
   };
 
   const getRootsList = (data) => {
@@ -125,7 +137,7 @@ function showBatchExportDialog() {
       });
     });
 
-    const collapsed = new Map();
+
 
     const addGroup = (label, projectId, items) => {
       const groupWrap = U.ce('div', { className: 'cgptx-group' });
@@ -134,7 +146,7 @@ function showBatchExportDialog() {
       const cb = U.ce('input', { type: 'checkbox' });
       const titleEl = U.ce('div', { className: 'group-title', textContent: label });
       const countEl = U.ce('div', { className: 'group-count', textContent: `${items.length} 条` });
-      header.append(arrow, cb, titleEl, countEl);
+      header.append(cb, arrow, titleEl, countEl);
       groupWrap.append(header);
 
       const list = U.ce('div', {
@@ -193,9 +205,10 @@ function showBatchExportDialog() {
           setStatus(`已选 ${selectedSet.size} 条`);
         });
         const body = U.ce('div');
+        const spacer = U.ce('div');
         const titleEl = U.ce('div', { className: 'title', textContent: it.title || it.id });
         body.append(titleEl);
-        row.append(itemCb, body);
+        row.append(itemCb, spacer, body);
         list.append(row);
         itemCheckboxes.push(itemCb);
       });
@@ -269,6 +282,7 @@ function showBatchExportDialog() {
       }
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       saveBlob(blob, `chatgpt-batch-${ts}.zip`);
+      setProgress(100, '完成');
       setStatus('完成 ✅（已下载 ZIP）');
     } catch (e) {
       console.error('[ChatGPT-Multimodal-Exporter] 批量导出失败', e);
@@ -295,6 +309,7 @@ function showBatchExportDialog() {
       listData = res;
       seedSelection(res);
       renderList(res);
+      setProgress(100, '加载完成');
       setStatus('请选择要导出的会话');
     } catch (e) {
       console.error('[ChatGPT-Multimodal-Exporter] 拉取列表失败', e);
@@ -411,25 +426,26 @@ export function mountUI() {
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 4px;
+        gap: 8px;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       .cgptx-mini-badge {
-        font-size: 11px;
-        padding: 3px 6px;
+        font-size: 12px;
+        padding: 4px 8px;
         border-radius: 999px;
-        background: #f3f4f6;
+        background: #ffffff;
         color: #374151;
         border: 1px solid #e5e7eb;
         max-width: 260px;
         white-space: nowrap;
         text-overflow: ellipsis;
         overflow: hidden;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
       }
       .cgptx-mini-badge.ok {
-        background: #e8f7ee;
-        border-color: #b7e3c9;
-        color: #065f46;
+        background: #ecfdf5;
+        border-color: #a7f3d0;
+        color: #047857;
       }
       .cgptx-mini-badge.bad {
         background: #fef2f2;
@@ -438,38 +454,40 @@ export function mountUI() {
       }
       .cgptx-mini-btn-row {
         display: flex;
-        gap: 6px;
+        gap: 8px;
       }
       .cgptx-mini-btn {
-        width: 46px;
-        height: 46px;
-        border-radius: 999px;
-        border: none;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        border: 1px solid #e5e7eb;
         cursor: pointer;
-        background: #111827;
-        color: #fff;
-        box-shadow: 0 8px 22px rgba(0, 0, 0, .22);
+        background: #ffffff;
+        color: #4b5563;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 20px;
-        transition: transform .15s, opacity .15s;
-        opacity: .95;
+        font-size: 22px;
+        transition: all .2s ease;
       }
       .cgptx-mini-btn:hover {
-        transform: translateY(-1px);
-        opacity: 1;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+        color: #2563eb;
+        border-color: #bfdbfe;
       }
       .cgptx-mini-btn:disabled {
-        opacity: .5;
+        opacity: .6;
         cursor: not-allowed;
         transform: none;
+        box-shadow: none;
       }
       .cgptx-modal {
         position: fixed;
         inset: 0;
-        background: rgba(0,0,0,.35);
-        backdrop-filter: blur(2px);
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -477,16 +495,16 @@ export function mountUI() {
       }
       .cgptx-modal-box {
         width: min(840px, 94vw);
-        max-height: 80vh;
-        background: #111827;
-        color: #e5e7eb;
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        box-shadow: 0 20px 40px rgba(0,0,0,.35);
-        padding: 16px;
+        max-height: 85vh;
+        background: #ffffff;
+        color: #1f2937;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+        padding: 24px;
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 16px;
         overflow: hidden;
         font-size: 14px;
       }
@@ -494,99 +512,164 @@ export function mountUI() {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 8px;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #f3f4f6;
       }
       .cgptx-modal-title {
-        font-weight: 600;
-        font-size: 16px;
+        font-weight: 700;
+        font-size: 18px;
+        color: #111827;
       }
       .cgptx-modal-actions {
         display: flex;
-        gap: 8px;
+        gap: 10px;
+        align-items: center;
       }
       .cgptx-chip {
-        padding: 4px 8px;
+        padding: 6px 12px;
         border-radius: 8px;
-        border: 1px solid #1f2937;
-        background: #0b1220;
-        color: #9ca3af;
+        border: 1px solid #e5e7eb;
+        background: #f9fafb;
+        color: #4b5563;
+        font-size: 13px;
       }
       .cgptx-list {
         flex: 1;
         overflow: auto;
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        background: #0b1220;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #f9fafb;
       }
       .cgptx-item {
         display: grid;
-        grid-template-columns: 22px 1fr;
-        gap: 8px;
-        padding: 6px 10px;
-        border-bottom: 1px solid #1f2937;
+        grid-template-columns: 24px 20px 1fr;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid #e5e7eb;
         align-items: center;
+        background: #fff;
+        transition: background .15s;
+      }
+      .cgptx-item:hover {
+        background: #f3f4f6;
       }
       .cgptx-item:last-child {
         border-bottom: none;
       }
       .cgptx-item .title {
-        font-weight: 600;
-        color: #f3f4f6;
-        line-height: 1.35;
+        font-weight: 500;
+        color: #1f2937;
+        line-height: 1.4;
       }
       .cgptx-group {
-        border-bottom: 1px solid #1f2937;
+        border-bottom: 1px solid #e5e7eb;
+        background: #fff;
       }
       .cgptx-group:last-child {
         border-bottom: none;
       }
       .cgptx-group-header {
         display: grid;
-        grid-template-columns: 18px 20px 1fr auto;
+        grid-template-columns: 24px 20px 1fr auto;
         align-items: center;
-        gap: 8px;
-        padding: 6px 10px;
-        background: #0d1526;
+        gap: 10px;
+        padding: 10px 14px;
+        background: #f3f4f6;
         cursor: pointer;
+        user-select: none;
+      }
+      .cgptx-group-header:hover {
+        background: #e5e7eb;
       }
       .cgptx-group-list {
-        border-top: 1px solid #1f2937;
+        border-top: 1px solid #e5e7eb;
       }
       .cgptx-arrow {
         font-size: 12px;
-        color: #9ca3af;
+        color: #6b7280;
+        transition: transform .2s;
       }
       .group-title {
         font-weight: 600;
-        color: #e5e7eb;
+        color: #374151;
       }
       .group-count {
         color: #6b7280;
         font-size: 12px;
+        background: #e5e7eb;
+        padding: 2px 6px;
+        border-radius: 4px;
       }
       .cgptx-item .meta {
-        color: #9ca3af;
+        color: #6b7280;
         font-size: 12px;
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
+        margin-top: 2px;
       }
       .cgptx-btn {
-        border: 1px solid #1f2937;
-        background: #111827;
-        color: #e5e7eb;
-        padding: 8px 12px;
-        border-radius: 10px;
+        border: 1px solid #d1d5db;
+        background: #ffffff;
+        color: #374151;
+        padding: 8px 16px;
+        border-radius: 8px;
         cursor: pointer;
+        font-weight: 500;
+        transition: all .15s;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+      .cgptx-btn:hover {
+        background: #f9fafb;
+        border-color: #9ca3af;
+        color: #111827;
       }
       .cgptx-btn.primary {
-        background: #2563eb;
-        border-color: #1d4ed8;
+        background: #3b82f6;
+        border-color: #2563eb;
         color: white;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+      }
+      .cgptx-btn.primary:hover {
+        background: #2563eb;
       }
       .cgptx-btn:disabled {
         opacity: .5;
         cursor: not-allowed;
+        box-shadow: none;
+      }
+      /* Progress Bar */
+      .cgptx-progress-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .cgptx-progress-track {
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .cgptx-progress-bar {
+        height: 100%;
+        background: #3b82f6;
+        width: 0%;
+        transition: width 0.3s ease;
+      }
+      .cgptx-progress-text {
+        font-size: 12px;
+        color: #6b7280;
+        text-align: right;
+      }
+      
+      /* Checkbox enhancement */
+      input[type="checkbox"] {
+        accent-color: #3b82f6;
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
       }
     `,
   });
