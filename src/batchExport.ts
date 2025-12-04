@@ -1,15 +1,14 @@
-// @ts-nocheck
-
 import JSZip from 'jszip';
 
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
 import { fetchConversationsBatch } from './conversations';
 import { U, BATCH_CONCURRENCY } from './utils';
+import { Task, Project, BatchExportSummary, Conversation } from './types';
 
-function buildProjectFolderNames(projects) {
-  const map = new Map();
-  const counts = {};
+function buildProjectFolderNames(projects: Project[]): Map<string, string> {
+  const map = new Map<string, string>();
+  const counts: Record<string, number> = {};
   projects.forEach((p) => {
     const base = U.sanitize(p.projectName || p.projectId || 'project');
     counts[base] = (counts[base] || 0) + 1;
@@ -36,11 +35,19 @@ export async function runBatchExport({
   concurrency = BATCH_CONCURRENCY,
   progressCb,
   cancelRef,
-}) {
+}: {
+  tasks: Task[];
+  projects: Project[];
+  rootIds: string[];
+  includeAttachments?: boolean;
+  concurrency?: number;
+  progressCb?: (pct: number, txt: string) => void;
+  cancelRef?: { cancel: boolean };
+}): Promise<Blob> {
   if (!tasks || !tasks.length) throw new Error('任务列表为空');
   if (typeof JSZip === 'undefined') throw new Error('JSZip 未加载');
   const zip = new JSZip();
-  const summary = {
+  const summary: BatchExportSummary = {
     exported_at: new Date().toISOString(),
     total_conversations: tasks.length,
     root: { count: rootIds.length, ids: rootIds },
@@ -57,18 +64,21 @@ export async function runBatchExport({
   const folderNameByProjectId = buildProjectFolderNames(projects || []);
   const rootJsonFolder = zip.folder('json');
   const rootAttFolder = zip.folder('attachments');
-  const projCache = new Map();
+  const projCache = new Map<
+    string,
+    { json: JSZip | null; att: JSZip | null }
+  >();
 
   const results = await fetchConversationsBatch(tasks, concurrency, progressCb, cancelRef);
   if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
 
   let idxRoot = 0;
-  const projSeq = {};
+  const projSeq: Record<string, number> = {};
 
   for (let i = 0; i < tasks.length; i++) {
     if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
     const t = tasks[i];
-    const data = results[i];
+    const data = results[i] as Conversation | null;
     if (!data) {
       summary.failed.conversations.push({
         id: t.id,
@@ -81,7 +91,7 @@ export async function runBatchExport({
     let baseFolderJson = rootJsonFolder;
     let baseFolderAtt = rootAttFolder;
     let seq = '';
-    if (isProject) {
+    if (isProject && t.projectId) {
       const fname = folderNameByProjectId.get(t.projectId) || U.sanitize(t.projectId || 'project');
       let cache = projCache.get(t.projectId);
       if (!cache) {
@@ -124,7 +134,7 @@ export async function runBatchExport({
       continue;
     }
     const convAttFolder = baseFolderAtt ? baseFolderAtt.folder(baseName) : null;
-    const usedNames = new Set();
+    const usedNames = new Set<string>();
     for (const c of candidates) {
       if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
       const pointerKey = c.pointer || c.file_id || '';
@@ -152,7 +162,7 @@ export async function runBatchExport({
           size_bytes:
             c.meta?.size_bytes || c.meta?.size || c.meta?.file_size || c.meta?.file_size_bytes || null,
         });
-      } catch (e) {
+      } catch (e: any) {
         summary.failed.attachments.push({
           conversation_id: data.conversation_id || t.id,
           project_id: t.projectId || '',
@@ -173,3 +183,4 @@ export async function runBatchExport({
   });
   return blob;
 }
+

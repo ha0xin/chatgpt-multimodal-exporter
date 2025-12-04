@@ -1,10 +1,21 @@
-// @ts-nocheck
-
 import { Cred } from './cred';
 import { fetchConversation } from './api';
 import { U } from './utils';
+import { Project, Task, Conversation } from './types';
 
-export async function listConversationsPage({ offset = 0, limit = 100, is_archived, is_starred, order }) {
+export async function listConversationsPage({
+  offset = 0,
+  limit = 100,
+  is_archived,
+  is_starred,
+  order,
+}: {
+  offset?: number;
+  limit?: number;
+  is_archived?: boolean;
+  is_starred?: boolean;
+  order?: string;
+}): Promise<any> {
   if (!Cred.token) await Cred.ensureViaSession();
   const headers = Cred.getAuthHeaders();
   const qs = new URLSearchParams({
@@ -23,7 +34,15 @@ export async function listConversationsPage({ offset = 0, limit = 100, is_archiv
   return resp.json();
 }
 
-export async function listProjectConversations({ projectId, cursor = 0, limit = 50 }) {
+export async function listProjectConversations({
+  projectId,
+  cursor = 0,
+  limit = 50,
+}: {
+  projectId: string;
+  cursor?: number;
+  limit?: number;
+}): Promise<any> {
   if (!Cred.token) await Cred.ensureViaSession();
   const headers = Cred.getAuthHeaders();
   const url = `${location.origin}/backend-api/gizmos/${projectId}/conversations?cursor=${cursor}&limit=${limit}`;
@@ -35,7 +54,7 @@ export async function listProjectConversations({ projectId, cursor = 0, limit = 
   return resp.json();
 }
 
-export async function listGizmosSidebar(cursor) {
+export async function listGizmosSidebar(cursor?: string | null): Promise<any> {
   if (!Cred.token) await Cred.ensureViaSession();
   const headers = Cred.getAuthHeaders();
   const url = new URL(`${location.origin}/backend-api/gizmos/snorlax/sidebar`);
@@ -49,22 +68,24 @@ export async function listGizmosSidebar(cursor) {
   return resp.json();
 }
 
-export async function collectAllConversationTasks(progressCb) {
-  const rootSet = new Set();
-  const rootInfo = new Map();
-  const projectMap = new Map();
+export async function collectAllConversationTasks(
+  progressCb?: (pct: number, txt: string) => void
+): Promise<{ rootIds: string[]; roots: { id: string; title: string }[]; projects: Project[] }> {
+  const rootSet = new Set<string>();
+  const rootInfo = new Map<string, { id: string; title: string }>();
+  const projectMap = new Map<string, Project>();
 
-  const addRoot = (id, title) => {
+  const addRoot = (id: string, title: string) => {
     if (!id) return;
     rootSet.add(id);
     if (!rootInfo.has(id)) rootInfo.set(id, { id, title: title || '' });
   };
 
-  const ensureProject = (projectId, projectName) => {
+  const ensureProject = (projectId: string, projectName?: string): Project | null => {
     if (!projectId) return null;
     let rec = projectMap.get(projectId);
     if (!rec) {
-      rec = { projectId, projectName: projectName || '', createdAt: '', convs: [] };
+      rec = { projectId, projectName: projectName || '', convs: [] };
       projectMap.set(projectId, rec);
     } else if (projectName && !rec.projectName) {
       rec.projectName = projectName;
@@ -72,7 +93,7 @@ export async function collectAllConversationTasks(progressCb) {
     return rec;
   };
 
-  const addProjectConv = (projectId, id, title, projectName) => {
+  const addProjectConv = (projectId: string, id: string, title: string, projectName?: string) => {
     if (!projectId || !id) return;
     const rec = ensureProject(projectId, projectName);
     if (!rec) return;
@@ -94,7 +115,7 @@ export async function collectAllConversationTasks(progressCb) {
         return null;
       });
       const arr = Array.isArray(page?.items) ? page.items : [];
-      arr.forEach((it) => {
+      arr.forEach((it: any) => {
         if (!it || !it.id) return;
         const id = it.id;
         const projId = it.conversation_template_id || it.gizmo_id || null;
@@ -112,33 +133,33 @@ export async function collectAllConversationTasks(progressCb) {
   // chatgpt-exporter 模式：不跑星标/归档组合，避免遗漏/重复
 
   try {
-    const projectIds = new Set();
-    let cursor = null;
+    const projectIds = new Set<string>();
+    let cursor: string | null = null;
     do {
-      const sidebar = await listGizmosSidebar(cursor).catch((e) => {
+      const sidebar: any = await listGizmosSidebar(cursor).catch((e) => {
         console.warn('[ChatGPT-Multimodal-Exporter] gizmos sidebar failed', e);
         return null;
       });
       const gizmosRaw = Array.isArray(sidebar?.gizmos) ? sidebar.gizmos : [];
       const itemsRaw = Array.isArray(sidebar?.items) ? sidebar.items : [];
 
-      const pushGizmo = (g) => {
+      const pushGizmo = (g: any) => {
         if (!g || !g.id) return;
         projectIds.add(g.id);
         ensureProject(g.id, g.display?.name || g.name || '');
         const convs = Array.isArray(g.conversations) ? g.conversations : [];
-        convs.forEach((c) => addProjectConv(g.id, c.id, c.title, g.display?.name || g.name));
+        convs.forEach((c: any) => addProjectConv(g.id, c.id, c.title, g.display?.name || g.name));
       };
 
-      gizmosRaw.forEach((g) => pushGizmo(g));
+      gizmosRaw.forEach((g: any) => pushGizmo(g));
 
-      itemsRaw.forEach((it) => {
+      itemsRaw.forEach((it: any) => {
         const g = it?.gizmo?.gizmo || it?.gizmo || null;
         if (!g || !g.id) return;
         pushGizmo(g);
         const convs = it?.conversations?.items;
         if (Array.isArray(convs))
-          convs.forEach((c) => addProjectConv(g.id, c.id, c.title, g.display?.name || g.name));
+          convs.forEach((c: any) => addProjectConv(g.id, c.id, c.title, g.display?.name || g.name));
       });
 
       cursor = sidebar && sidebar.cursor ? sidebar.cursor : null;
@@ -153,7 +174,7 @@ export async function collectAllConversationTasks(progressCb) {
           return null;
         });
         const arr = Array.isArray(page?.items) ? page.items : [];
-        arr.forEach((it) => {
+        arr.forEach((it: any) => {
           if (!it || !it.id) return;
           addProjectConv(pid, it.id, it.title || '');
         });
@@ -173,12 +194,16 @@ export async function collectAllConversationTasks(progressCb) {
   return { rootIds, roots, projects };
 }
 
-export async function fetchConvWithRetry(id, projectId, retries = 2) {
+export async function fetchConvWithRetry(
+  id: string,
+  projectId?: string | null,
+  retries = 2
+): Promise<Conversation> {
   let attempt = 0;
-  let lastErr = null;
+  let lastErr: any = null;
   while (attempt <= retries) {
     try {
-      return await fetchConversation(id, projectId);
+      return await fetchConversation(id, projectId || undefined);
     } catch (e) {
       lastErr = e;
       attempt++;
@@ -189,13 +214,18 @@ export async function fetchConvWithRetry(id, projectId, retries = 2) {
   throw lastErr || new Error('fetch_failed');
 }
 
-export async function fetchConversationsBatch(tasks, concurrency, progressCb, cancelRef) {
+export async function fetchConversationsBatch(
+  tasks: Task[],
+  concurrency: number,
+  progressCb?: (pct: number, txt: string) => void,
+  cancelRef?: { cancel: boolean }
+): Promise<(Conversation | null)[]> {
   const total = tasks.length;
   if (!total) return [];
-  const results = new Array(total);
+  const results: (Conversation | null)[] = new Array(total);
   let done = 0;
   let index = 0;
-  let fatalErr = null;
+  let fatalErr: any = null;
 
   const worker = async () => {
     while (true) {
@@ -224,3 +254,4 @@ export async function fetchConversationsBatch(tasks, concurrency, progressCb, ca
   if (fatalErr) throw fatalErr;
   return results;
 }
+
