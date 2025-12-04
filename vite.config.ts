@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
-import monkey from 'vite-plugin-monkey';
+import preact from '@preact/preset-vite';
+import monkey, { cdn } from 'vite-plugin-monkey';
 
 export default defineConfig({
   plugins: [
+    preact(),
     monkey({
       entry: 'src/main.ts',
       userscript: {
@@ -18,6 +20,9 @@ export default defineConfig({
       },
       build: {
         fileName: 'chatgpt-multimodal-exporter.user.js',
+        externalGlobals: {
+          preact: cdn.jsdelivr('preact', 'dist/preact.min.js'),
+        },
       },
     }),
   ],
