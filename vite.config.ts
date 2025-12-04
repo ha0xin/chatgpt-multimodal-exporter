@@ -10,7 +10,7 @@ export default defineConfig({
       userscript: {
         name: 'ChatGPT-Multimodal-Exporter',
         namespace: 'chatgpt-multimodal-exporter',
-        version: '0.4.0',
+        version: '0.5.0',
         author: 'ha0xin',
         description: '导出对话 json + 会话中的多模态文件（图片、音频、sandbox 文件等）',
         icon: 'https://chat.openai.com/favicon.ico',
