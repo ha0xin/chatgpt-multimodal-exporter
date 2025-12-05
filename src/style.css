@@ -348,3 +348,17 @@
 .cgptx-list::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+/* StatusPanel Styles */
+.cgptx-mini-badges-col {
+  display: flex; 
+  flex-direction: column; 
+  gap: 4px; 
+  margin-bottom: 8px; 
+  align-items: flex-end;
+}
+
+.cgptx-mini-badge.info {
+  background: #e0f2fe; 
+  color: #0369a1; 
+  border-color: #bae6fd;
+}

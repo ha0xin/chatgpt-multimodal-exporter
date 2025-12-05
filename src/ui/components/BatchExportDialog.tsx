@@ -55,7 +55,7 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
             const newGroups: GroupState[] = [];
             const rootsList = getRootsList(res);
             if (rootsList.length) {
-                newGroups.push({ label: '无项目（个人会话）', projectId: null, items: rootsList, collapsed: false });
+                newGroups.push({ label: '无项目', projectId: null, items: rootsList, collapsed: false });
             }
             (res.projects || []).forEach((p: Project) => {
                 const convs = Array.isArray(p.convs) ? p.convs : [];

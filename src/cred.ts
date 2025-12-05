@@ -26,7 +26,7 @@ export const Cred = (() => {
     interceptorsInitialized = true;
 
     const originalFetch = window.fetch;
-    window.fetch = async function (input, init) {
+    window.fetch = async function (_input, init) {
       // Capture from request headers
       if (init && init.headers) {
         captureFromHeaders(init.headers);
@@ -36,7 +36,7 @@ export const Cred = (() => {
 
     // Also hook XMLHttpRequest for completeness
     const originalOpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function (method, url) {
+    XMLHttpRequest.prototype.open = function (_method, _url) {
       this.addEventListener('readystatechange', () => {
         if (this.readyState === 1) { // OPENED, headers might be set later, but we can't intercept setRequestHeader easily without proxying it.
           // Actually, we need to proxy setRequestHeader to capture outgoing headers for XHR.
