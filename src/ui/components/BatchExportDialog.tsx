@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
+import { useSignal } from '@preact/signals';
 import { BATCH_CONCURRENCY, saveBlob } from '../../utils';
 import { collectAllConversationTasks } from '../../conversations';
 import { runBatchExport } from '../../batchExport';
 import { Project, Task } from '../../types';
+import { Checkbox } from './Checkbox';
 
 interface BatchExportDialogProps {
     onClose: () => void;
@@ -16,16 +18,16 @@ interface GroupState {
 }
 
 export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [listData, setListData] = useState<{ rootIds: string[]; roots: any[]; projects: Project[] } | null>(null);
-    const [groups, setGroups] = useState<GroupState[]>([]);
-    const [selectedSet, setSelectedSet] = useState<Set<string>>(new Set());
-    const [includeAttachments, setIncludeAttachments] = useState(true);
+    const loading = useSignal(true);
+    const error = useSignal<string | null>(null);
+    const listData = useSignal<{ rootIds: string[]; roots: any[]; projects: Project[] } | null>(null);
+    const groups = useSignal<GroupState[]>([]);
+    const selectedSet = useSignal<Set<string>>(new Set());
+    const includeAttachments = useSignal(true);
 
-    const [exporting, setExporting] = useState(false);
-    const [progress, setProgress] = useState<{ pct: number; text: string } | null>(null);
-    const [statusText, setStatusText] = useState('加载会话列表…');
+    const exporting = useSignal(false);
+    const progress = useSignal<{ pct: number; text: string } | null>(null);
+    const statusText = useSignal('加载会话列表…');
 
     const cancelRef = useRef<{ cancel: boolean }>({ cancel: false });
 
@@ -44,9 +46,9 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
     const loadData = async () => {
         try {
             const res = await collectAllConversationTasks((pct, text) => {
-                setProgress({ pct, text });
+                progress.value = { pct, text };
             });
-            setListData(res);
+            listData.value = res;
 
             // Build groups
             const newGroups: GroupState[] = [];
@@ -63,7 +65,7 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
                     collapsed: false
                 });
             });
-            setGroups(newGroups);
+            groups.value = newGroups;
 
             // Seed selection
             const initialSet = new Set<string>();
@@ -71,15 +73,15 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
             (res.projects || []).forEach((p: Project) => {
                 (p.convs || []).forEach((c) => initialSet.add(makeKey(p.projectId, c.id)));
             });
-            setSelectedSet(initialSet);
+            selectedSet.value = initialSet;
 
-            setLoading(false);
-            setProgress(null);
-            setStatusText(`共 ${newGroups.reduce((n, g) => n + g.items.length, 0)} 条，已选 ${initialSet.size}`);
+            loading.value = false;
+            progress.value = null;
+            statusText.value = `共 ${newGroups.reduce((n, g) => n + g.items.length, 0)} 条，已选 ${initialSet.size}`;
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 拉取列表失败', e);
-            setError(e.message || String(e));
-            setStatusText('拉取列表失败');
+            error.value = e.message || String(e);
+            statusText.value = '拉取列表失败';
         }
     };
 
@@ -91,13 +93,13 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
     };
 
     const toggleGroupCollapse = (idx: number) => {
-        const newGroups = [...groups];
+        const newGroups = [...groups.value];
         newGroups[idx].collapsed = !newGroups[idx].collapsed;
-        setGroups(newGroups);
+        groups.value = newGroups;
     };
 
     const toggleGroupSelect = (group: GroupState, checked: boolean) => {
-        const newSet = new Set(selectedSet);
+        const newSet = new Set(selectedSet.value);
         const keys = group.items.map(it => makeKey(group.projectId, it.id));
 
         if (checked) {
@@ -105,38 +107,38 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
         } else {
             keys.forEach(k => newSet.delete(k));
         }
-        setSelectedSet(newSet);
-        setStatusText(`已选 ${newSet.size} 条`);
+        selectedSet.value = newSet;
+        statusText.value = `已选 ${newSet.size} 条`;
     };
 
     const toggleItemSelect = (key: string) => {
-        const newSet = new Set(selectedSet);
+        const newSet = new Set(selectedSet.value);
         if (newSet.has(key)) newSet.delete(key);
         else newSet.add(key);
-        setSelectedSet(newSet);
-        setStatusText(`已选 ${newSet.size} 条`);
+        selectedSet.value = newSet;
+        statusText.value = `已选 ${newSet.size} 条`;
     };
 
     const toggleAll = () => {
-        if (!listData) return;
+        if (!listData.value) return;
         const allKeys: string[] = [];
-        groups.forEach(g => g.items.forEach(it => allKeys.push(makeKey(g.projectId, it.id))));
+        groups.value.forEach(g => g.items.forEach(it => allKeys.push(makeKey(g.projectId, it.id))));
 
-        const allChecked = allKeys.every(k => selectedSet.has(k));
-        const newSet = new Set(selectedSet);
+        const allChecked = allKeys.every(k => selectedSet.value.has(k));
+        const newSet = new Set(selectedSet.value);
 
         if (allChecked) {
             allKeys.forEach(k => newSet.delete(k));
         } else {
             allKeys.forEach(k => newSet.add(k));
         }
-        setSelectedSet(newSet);
-        setStatusText(`已选 ${newSet.size} 条`);
+        selectedSet.value = newSet;
+        statusText.value = `已选 ${newSet.size} 条`;
     };
 
     const startExport = async () => {
-        if (!listData) return;
-        const tasks = Array.from(selectedSet)
+        if (!listData.value) return;
+        const tasks = Array.from(selectedSet.value)
             .map((k) => parseKey(k))
             .filter((t) => !!t.id);
 
@@ -146,12 +148,12 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
         }
 
         cancelRef.current.cancel = false;
-        setExporting(true);
-        setStatusText('准备导出…');
-        setProgress({ pct: 0, text: '准备中' });
+        exporting.value = true;
+        statusText.value = '准备导出…';
+        progress.value = { pct: 0, text: '准备中' };
 
         const projectMapForTasks = new Map<string, Project>();
-        (listData.projects || []).forEach((p) => projectMapForTasks.set(p.projectId, p));
+        (listData.value.projects || []).forEach((p) => projectMapForTasks.set(p.projectId, p));
 
         const seenProj = new Set<string>();
         const selectedProjects: Project[] = [];
@@ -169,34 +171,36 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
                 tasks,
                 projects: selectedProjects,
                 rootIds: selectedRootIds,
-                includeAttachments: includeAttachments,
+                includeAttachments: includeAttachments.value,
                 concurrency: BATCH_CONCURRENCY,
-                progressCb: (pct, txt) => setProgress({ pct, text: txt }),
+                progressCb: (pct, txt) => {
+                    progress.value = { pct, text: txt };
+                },
                 cancelRef: cancelRef.current,
             });
 
             if (cancelRef.current.cancel) {
-                setStatusText('已取消');
+                statusText.value = '已取消';
                 return;
             }
 
             const ts = new Date().toISOString().replace(/[:.]/g, '-');
             saveBlob(blob, `chatgpt-batch-${ts}.zip`);
-            setProgress({ pct: 100, text: '完成' });
-            setStatusText('完成 ✅（已下载 ZIP）');
+            progress.value = { pct: 100, text: '完成' };
+            statusText.value = '完成 ✅（已下载 ZIP）';
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 批量导出失败', e);
             alert('批量导出失败：' + (e && e.message ? e.message : e));
-            setStatusText('失败');
+            statusText.value = '失败';
         } finally {
-            setExporting(false);
+            exporting.value = false;
             cancelRef.current.cancel = false;
         }
     };
 
     const handleStop = () => {
         cancelRef.current.cancel = true;
-        setStatusText('请求取消中…');
+        statusText.value = '请求取消中…';
     };
 
     return (
@@ -205,35 +209,32 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
                 <div className="cgptx-modal-header">
                     <div className="cgptx-modal-title">批量导出对话（JSON + 附件）</div>
                     <div className="cgptx-modal-actions">
-                        <button className="cgptx-btn" onClick={toggleAll} disabled={exporting || loading}>全选/反选</button>
-                        <button className="cgptx-btn primary" onClick={startExport} disabled={exporting || loading}>开始导出</button>
-                        <button className="cgptx-btn" onClick={handleStop} disabled={!exporting}>停止</button>
+                        <button className="cgptx-btn" onClick={toggleAll} disabled={exporting.value || loading.value}>全选/反选</button>
+                        <button className="cgptx-btn primary" onClick={startExport} disabled={exporting.value || loading.value}>开始导出</button>
+                        <button className="cgptx-btn" onClick={handleStop} disabled={!exporting.value}>停止</button>
                         <button className="cgptx-btn" onClick={onClose}>关闭</button>
                     </div>
                 </div>
 
-                <div className="cgptx-chip">{statusText}</div>
+                <div className="cgptx-chip">{statusText.value}</div>
 
                 <div className="cgptx-modal-actions" style={{ justifyContent: 'flex-start', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <input
-                            type="checkbox"
-                            checked={includeAttachments}
-                            onChange={(e) => setIncludeAttachments(e.currentTarget.checked)}
-                            disabled={exporting}
-                        />
-                        <span>包含附件（ZIP）</span>
-                    </label>
+                    <Checkbox
+                        checked={includeAttachments.value}
+                        onChange={(checked) => includeAttachments.value = checked}
+                        disabled={exporting.value}
+                        label="包含附件（ZIP）"
+                    />
                 </div>
 
                 <div className="cgptx-list" style={{ maxHeight: '46vh', overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: '10px' }}>
-                    {loading && (
+                    {loading.value && (
                         <div className="cgptx-item" style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
-                            {progress ? (
+                            {progress.value ? (
                                 <div style={{ width: '100%', textAlign: 'center' }}>
-                                    <div>{progress.text} ({Math.round(progress.pct)}%)</div>
+                                    <div>{progress.value.text} ({Math.round(progress.value.pct)}%)</div>
                                     <div className="cgptx-progress-track" style={{ marginTop: '10px' }}>
-                                        <div className="cgptx-progress-bar" style={{ width: `${progress.pct}%` }}></div>
+                                        <div className="cgptx-progress-bar" style={{ width: `${progress.value.pct}%` }}></div>
                                     </div>
                                 </div>
                             ) : (
@@ -241,22 +242,21 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
                             )}
                         </div>
                     )}
-                    {error && <div className="cgptx-item" style={{ color: 'red' }}>{error}</div>}
+                    {error.value && <div className="cgptx-item" style={{ color: 'red' }}>{error.value}</div>}
 
-                    {!loading && !error && groups.map((group, gIdx) => {
+                    {!loading.value && !error.value && groups.value.map((group, gIdx) => {
                         const groupKeys = group.items.map(it => makeKey(group.projectId, it.id));
-                        const checkedCount = groupKeys.filter(k => selectedSet.has(k)).length;
+                        const checkedCount = groupKeys.filter(k => selectedSet.value.has(k)).length;
                         const isAll = checkedCount === groupKeys.length && groupKeys.length > 0;
                         const isIndeterminate = checkedCount > 0 && checkedCount < groupKeys.length;
 
                         return (
                             <div className="cgptx-group" key={gIdx}>
                                 <div className="cgptx-group-header">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={isAll}
-                                        ref={(el) => { if (el) el.indeterminate = isIndeterminate; }}
-                                        onChange={(e) => toggleGroupSelect(group, e.currentTarget.checked)}
+                                        indeterminate={isIndeterminate}
+                                        onChange={(checked) => toggleGroupSelect(group, checked)}
                                     />
                                     <span
                                         className="cgptx-arrow"
@@ -273,9 +273,8 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
                                         const key = makeKey(group.projectId, item.id);
                                         return (
                                             <div className="cgptx-item" key={key}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedSet.has(key)}
+                                                <Checkbox
+                                                    checked={selectedSet.value.has(key)}
                                                     onChange={() => toggleItemSelect(key)}
                                                 />
                                                 <div></div>
@@ -291,13 +290,13 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
                     })}
                 </div>
 
-                {!loading && progress && (
+                {!loading.value && progress.value && (
                     <div className="cgptx-progress-wrap" style={{ display: 'flex' }}>
                         <div className="cgptx-progress-track">
-                            <div className="cgptx-progress-bar" style={{ width: `${progress.pct}%` }}></div>
+                            <div className="cgptx-progress-bar" style={{ width: `${progress.value.pct}%` }}></div>
                         </div>
                         <div className="cgptx-progress-text">
-                            {progress.text} ({Math.round(progress.pct)}%)
+                            {progress.value.text} ({Math.round(progress.value.pct)}%)
                         </div>
                     </div>
                 )}
