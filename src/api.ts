@@ -31,7 +31,7 @@ export async function fetchConversation(id: string, projectId?: string): Promise
   }
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${txt.slice(0, 120)}`);
+    throw new Error(`HTTP ${resp.status}: ${txt.slice(0, 200)}`);
   }
   return resp.json();
 }
@@ -61,7 +61,7 @@ export async function downloadSandboxFile({
   const resp = await fetch(url, { headers, credentials: 'include' });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 120)}`);
+    throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 200)}`);
   }
   let j: any;
   try {
@@ -70,7 +70,7 @@ export async function downloadSandboxFile({
     throw new Error('sandbox download meta 非 JSON');
   }
   const dl = j.download_url;
-  if (!dl) throw new Error('sandbox download_url 缺失');
+  if (!dl) throw new Error(`sandbox download_url 缺失: ${JSON.stringify(j).slice(0, 200)}`);
   const fname = sanitize(j.file_name || sandboxPath.split('/').pop() || 'sandbox_file');
   await gmDownload(dl, fname);
 }
@@ -100,7 +100,7 @@ export async function downloadSandboxFileBlob({
   const resp = await fetch(url, { headers, credentials: 'include' });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 120)}`);
+    throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 200)}`);
   }
   let j: any;
   try {
@@ -109,7 +109,7 @@ export async function downloadSandboxFileBlob({
     throw new Error('sandbox download meta 非 JSON');
   }
   const dl = j.download_url;
-  if (!dl) throw new Error('sandbox download_url 缺失');
+  if (!dl) throw new Error(`sandbox download_url 缺失: ${JSON.stringify(j).slice(0, 200)}`);
   const gmHeaders = {};
   const res = await gmFetchBlob(dl, gmHeaders);
   const fname = inferFilename(
@@ -133,11 +133,17 @@ export async function fetchDownloadUrlOrResponse(
 ): Promise<string | Response | null> {
   const url = `${location.origin}/backend-api/files/download/${fileId}?inline=false`;
   const resp = await fetch(url, { method: 'GET', headers, credentials: 'include' });
-  if (!resp.ok) throw new Error(`download meta ${resp.status}`);
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`download meta ${resp.status}: ${txt.slice(0, 200)}`);
+  }
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('json')) {
     const j = await resp.json();
-    return j.download_url || j.url || null;
+    if (!j.download_url && !j.url) {
+      throw new Error(`download meta missing url: ${JSON.stringify(j).slice(0, 200)}`);
+    }
+    return j.download_url || j.url;
   }
   return resp;
 }

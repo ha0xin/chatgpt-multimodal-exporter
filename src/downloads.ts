@@ -52,7 +52,7 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
     await gmDownload(downloadResult, fname);
     return;
   } else {
-    throw new Error('无法获取 download_url');
+    throw new Error(`无法获取 download_url，如果file-id正确，可能是链接过期 (file_id: ${fileId})`);
   }
 
   if (!resp.ok) {
@@ -140,7 +140,7 @@ export async function downloadPointerOrFileAsBlob(
       filename: fname,
     };
   } else {
-    throw new Error('无法获取 download_url');
+    throw new Error(`无法获取 download_url，如果file-id正确，可能是链接过期 (file_id: ${fileId})`);
   }
 
   if (!resp.ok) {
