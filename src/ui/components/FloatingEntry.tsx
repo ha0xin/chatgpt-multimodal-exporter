@@ -8,6 +8,7 @@ import { Conversation } from '../../types';
 import { showBatchExportDialog } from '../dialogs/BatchExportDialog';
 import { showFilePreviewDialog } from '../dialogs/FilePreviewDialog';
 import { toast } from 'sonner';
+import { runAutoSave, subscribeStatus, pickAndSaveRootHandle, getRootHandle, startAutoSaveLoop, AutoSaveStatus } from '../../autoSave';
 
 export function FloatingEntry() {
     const [status, setStatus] = useState({ hasToken: false, hasAcc: false, debug: '' });
@@ -33,6 +34,38 @@ export function FloatingEntry() {
         const timer = setInterval(refreshCredStatus, 60 * 1000);
         return () => clearInterval(timer);
     }, []);
+
+    const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>({ lastRun: 0, state: 'idle', message: '' });
+
+    useEffect(() => {
+        // Auto-start loop if handle exists
+        getRootHandle().then(h => {
+            if (h) startAutoSaveLoop();
+        });
+        return subscribeStatus(setAutoSaveStatus);
+    }, []);
+
+    const handleAutoSave = async () => {
+        try {
+            let handle = await getRootHandle();
+            if (!handle) {
+                handle = await pickAndSaveRootHandle();
+                if (handle) {
+                    startAutoSaveLoop();
+                    toast.success('自动保存已开启');
+                }
+            } else {
+                // If already configured, maybe trigger a manual run?
+                runAutoSave();
+                toast.success('正在检查更新...');
+            }
+        } catch (e: any) {
+            console.error(e);
+            if (e.name !== 'AbortError') {
+                toast.error('开启自动保存失败: ' + e.message);
+            }
+        }
+    };
 
     const handleJsonExport = async () => {
         const id = convId();
@@ -187,6 +220,18 @@ export function FloatingEntry() {
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </button>
+                <button
+                    id="cgptx-mini-btn-autosave"
+                    className={`cgptx-mini-btn ${autoSaveStatus.state === 'saving' ? 'busy' : ''}`}
+                    title={`自动保存 (每5分钟)\n状态: ${autoSaveStatus.state}\n${autoSaveStatus.message}`}
+                    onClick={handleAutoSave}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
                     </svg>
                 </button>
             </div>
