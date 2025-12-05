@@ -1,5 +1,5 @@
 import { Cred } from './cred';
-import { projectId, sanitize, gmDownload, gmFetchBlob, inferFilename } from './utils';
+import { projectId, sanitize, gmDownload, gmFetchBlob, inferFilename, fetchWithRetry } from './utils';
 import { Conversation } from './types';
 
 export async function fetchConversation(id: string, projectId?: string): Promise<Conversation> {
@@ -18,15 +18,18 @@ export async function fetchConversation(id: string, projectId?: string): Promise
     headers,
   };
 
-  let resp = await fetch(url, init).catch(() => null);
+  // Use fetchWithRetry for the initial request
+  let resp = await fetchWithRetry(url, init).catch(() => null);
   if (!resp) throw new Error('网络错误');
+
   if (resp.status === 401) {
     const ok = await Cred.ensureViaSession();
     if (!ok) throw new Error('401：重新获取凭证失败');
     const h2 = Cred.getAuthHeaders();
     if (projectId) h2.set('chatgpt-project-id', projectId);
     init.headers = h2;
-    resp = await fetch(url, init).catch(() => null);
+    // Retry with new token, also using fetchWithRetry
+    resp = await fetchWithRetry(url, init).catch(() => null);
     if (!resp) throw new Error('网络错误（重试）');
   }
   if (!resp.ok) {
@@ -58,7 +61,7 @@ export async function downloadSandboxFile({
     sandbox_path: sandboxPath.replace(/^sandbox:/, ''),
   });
   const url = `${location.origin}/backend-api/conversation/${conversationId}/interpreter/download?${params.toString()}`;
-  const resp = await fetch(url, { headers, credentials: 'include' });
+  const resp = await fetchWithRetry(url, { headers, credentials: 'include' });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
     throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 200)}`);
@@ -97,7 +100,7 @@ export async function downloadSandboxFileBlob({
     sandbox_path: sandboxPath.replace(/^sandbox:/, ''),
   });
   const url = `${location.origin}/backend-api/conversation/${conversationId}/interpreter/download?${params.toString()}`;
-  const resp = await fetch(url, { headers, credentials: 'include' });
+  const resp = await fetchWithRetry(url, { headers, credentials: 'include' });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
     throw new Error(`sandbox download meta ${resp.status}: ${txt.slice(0, 200)}`);
@@ -122,7 +125,7 @@ export async function downloadSandboxFileBlob({
 
 export async function fetchFileMeta(fileId: string, headers: Headers): Promise<any> {
   const url = `${location.origin}/backend-api/files/${fileId}`;
-  const resp = await fetch(url, { method: 'GET', headers, credentials: 'include' });
+  const resp = await fetchWithRetry(url, { method: 'GET', headers, credentials: 'include' });
   if (!resp.ok) throw new Error(`meta ${resp.status}`);
   return resp.json();
 }
@@ -132,7 +135,7 @@ export async function fetchDownloadUrlOrResponse(
   headers: Headers
 ): Promise<string | Response | null> {
   const url = `${location.origin}/backend-api/files/download/${fileId}?inline=false`;
-  const resp = await fetch(url, { method: 'GET', headers, credentials: 'include' });
+  const resp = await fetchWithRetry(url, { method: 'GET', headers, credentials: 'include' });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
     throw new Error(`download meta ${resp.status}: ${txt.slice(0, 200)}`);

@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import { formatBytes } from '../../utils';
 import { FileCandidate } from '../../types';
+import { toast } from 'sonner';
+import { Checkbox } from './Checkbox';
 
 interface FilePreviewDialogProps {
     candidates: FileCandidate[];
@@ -32,7 +34,7 @@ export function FilePreviewDialog({ candidates, onConfirm, onClose }: FilePrevie
     const handleConfirm = () => {
         const selected = candidates.filter((_, i) => selectedIndices.has(i));
         if (selected.length === 0) {
-            alert('请至少选择一个文件');
+            toast.error('请至少选择一个文件');
             return;
         }
         onConfirm(selected);
@@ -74,8 +76,7 @@ export function FilePreviewDialog({ candidates, onConfirm, onClose }: FilePrevie
 
                         return (
                             <div className="cgptx-item" key={idx}>
-                                <input
-                                    type="checkbox"
+                                <Checkbox
                                     checked={selectedIndices.has(idx)}
                                     onChange={() => toggleSelect(idx)}
                                 />

@@ -17,6 +17,9 @@ importers:
       preact:
         specifier: ^10.28.0
         version: 10.28.0
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.7(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
     devDependencies:
       '@preact/preset-vite':
         specifier: ^2.10.2
@@ -724,6 +727,15 @@ packages:
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
+  react-dom@19.2.1:
+    resolution: {integrity: sha512-ibrK8llX2a4eOskq1mXKu/TGZj9qzomO+sNfO98M6d9zIPOEhlBkMkBUBLd1vgS0gQsLDBzA+8jJBVXDnfHmJg==}
+    peerDependencies:
+      react: ^19.2.1
+
+  react@19.2.1:
+    resolution: {integrity: sha512-DGrYcCWK7tvYMnWh79yrPHt+vdx9tY+1gPZa7nJQtO/p8bLTDaHp4dzwEhQB7pZ4Xe3ok4XKuEPrVuc+wlpkmw==}
+    engines: {node: '>=0.10.0'}
+
   readable-stream@2.3.8:
     resolution: {integrity: sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==}
 
@@ -738,6 +750,9 @@ packages:
 
   safe-buffer@5.1.2:
     resolution: {integrity: sha512-Gd2UZBJDkXlY7GbJxfsE8/nvKkUEU1G38c1siN6QP6a9PT9MmHB8GnpscSmMJSoF8LOIrt8ud/wPtojys4G6+g==}
+
+  scheduler@0.27.0:
+    resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
 
   semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
@@ -757,6 +772,12 @@ packages:
 
   simple-code-frame@1.3.0:
     resolution: {integrity: sha512-MB4pQmETUBlNs62BBeRjIFGeuy/x6gGKh7+eRUemn1rCFhqo7K+4slPqsyizCbcbYLnaYqaoZ2FWsZ/jN06D8w==}
+
+  sonner@2.0.7:
+    resolution: {integrity: sha512-W6ZN4p58k8aDKA4XPcx2hpIQXBRAgyiWVkYhT7CvK6D3iAu7xjvVyhQHg2/iaKJZ1XVJ4r7XuwGL+WGEK37i9w==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0 || ^19.0.0-rc
+      react-dom: ^18.0.0 || ^19.0.0 || ^19.0.0-rc
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -1464,6 +1485,13 @@ snapshots:
 
   process-nextick-args@2.0.1: {}
 
+  react-dom@19.2.1(react@19.2.1):
+    dependencies:
+      react: 19.2.1
+      scheduler: 0.27.0
+
+  react@19.2.1: {}
+
   readable-stream@2.3.8:
     dependencies:
       core-util-is: 1.0.3
@@ -1506,6 +1534,8 @@ snapshots:
 
   safe-buffer@5.1.2: {}
 
+  scheduler@0.27.0: {}
+
   semver@6.3.1: {}
 
   set-immediate-shim@1.0.1: {}
@@ -1519,6 +1549,11 @@ snapshots:
   simple-code-frame@1.3.0:
     dependencies:
       kolorist: 1.8.0
+
+  sonner@2.0.7(react-dom@19.2.1(react@19.2.1))(react@19.2.1):
+    dependencies:
+      react: 19.2.1
+      react-dom: 19.2.1(react@19.2.1)
 
   source-map-js@1.2.1: {}
 

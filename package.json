@@ -14,7 +14,8 @@
   "dependencies": {
     "@preact/signals": "^2.5.1",
     "jszip": "3.9.1",
-    "preact": "^10.28.0"
+    "preact": "^10.28.0",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",

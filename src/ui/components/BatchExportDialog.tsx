@@ -5,6 +5,7 @@ import { collectAllConversationTasks } from '../../conversations';
 import { runBatchExport } from '../../batchExport';
 import { Project, Task } from '../../types';
 import { Checkbox } from './Checkbox';
+import { toast } from 'sonner';
 
 interface BatchExportDialogProps {
     onClose: () => void;
@@ -143,7 +144,7 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
             .filter((t) => !!t.id);
 
         if (!tasks.length) {
-            alert('请至少选择一条会话');
+            toast.error('请至少选择一条会话');
             return;
         }
 
@@ -181,6 +182,7 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
 
             if (cancelRef.current.cancel) {
                 statusText.value = '已取消';
+                toast.info('批量导出已取消');
                 return;
             }
 
@@ -188,9 +190,10 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
             saveBlob(blob, `chatgpt-batch-${ts}.zip`);
             progress.value = { pct: 100, text: '完成' };
             statusText.value = '完成 ✅（已下载 ZIP）';
+            toast.success('批量导出完成');
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 批量导出失败', e);
-            alert('批量导出失败：' + (e && e.message ? e.message : e));
+            toast.error('批量导出失败：' + (e && e.message ? e.message : e));
             statusText.value = '失败';
         } finally {
             exporting.value = false;

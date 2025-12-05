@@ -136,3 +136,28 @@ export function inferFilename(name: string, fallbackId: string, mime: string): s
   return `${base}${ext}`;
 }
 
+
+export async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries: number = 3,
+  backoff: number = 1000
+): Promise<Response> {
+  let lastError: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok || res.status < 500) {
+        return res;
+      }
+      // If 5xx, throw to trigger retry
+      throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastError = e;
+      if (i < retries) {
+        await sleep(backoff * Math.pow(2, i));
+      }
+    }
+  }
+  throw lastError;
+}
