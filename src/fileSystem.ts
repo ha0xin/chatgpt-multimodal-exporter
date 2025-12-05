@@ -98,3 +98,11 @@ export async function fileExists(parent: FileSystemDirectoryHandle, name: string
         return false;
     }
 }
+
+export async function readFile(parent: FileSystemDirectoryHandle, name: string): Promise<string> {
+    // @ts-ignore
+    const fileHandle = await parent.getFileHandle(name);
+    // @ts-ignore
+    const file = await fileHandle.getFile();
+    return await file.text();
+}

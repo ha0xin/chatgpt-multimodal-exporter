@@ -1,10 +1,12 @@
 import { listConversationsPage, listGizmosSidebar, listProjectConversations, fetchConvWithRetry } from './conversations';
+import { Cred } from './cred';
 import { loadState, updateConversationState } from './autoSaveState';
 import { getRootHandle, verifyPermission, ensureFolder, writeFile, fileExists } from './fileSystem';
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
 import { sanitize } from './utils';
 import { Conversation } from './types';
+import { Logger } from './logger';
 
 // Re-export file system helpers for UI
 export { pickAndSaveRootHandle, getRootHandle } from './fileSystem';
@@ -31,10 +33,13 @@ function setStatus(state: AutoSaveStatus['state'], message: string) {
     listeners.forEach((cb) => cb(currentStatus));
 }
 
-async function saveConversationToDisk(handle: FileSystemDirectoryHandle, conv: Conversation) {
+async function saveConversationToDisk(handle: FileSystemDirectoryHandle, conv: Conversation, parentFolderName: string) {
     const id = conv.conversation_id;
-    const folderName = id; // Use ID as folder name
-    const convFolder = await ensureFolder(handle, folderName);
+
+    // Ensure parent folder (Personal or ProjectID)
+    const parentFolder = await ensureFolder(handle, parentFolderName);
+    // Ensure conversation folder
+    const convFolder = await ensureFolder(parentFolder, id);
 
     // 1. Save conversation.json
     await writeFile(convFolder, 'conversation.json', JSON.stringify(conv, null, 2));
@@ -55,17 +60,10 @@ async function saveConversationToDisk(handle: FileSystemDirectoryHandle, conv: C
         const attFolder = await ensureFolder(convFolder, 'attachments');
         for (const c of candidates) {
             try {
-                // Try to predict filename to check existence
                 let predictedName = '';
                 if (c.meta && (c.meta.name || c.meta.file_name)) {
                     predictedName = sanitize(c.meta.name || c.meta.file_name);
                 }
-
-                // If we have a predicted name, check if it exists
-                // Note: This is a heuristic. If multiple files have same name, this might be risky.
-                // But sanitize() handles some chars. 
-                // Ideally we should match file_id too, but we don't store file_id in filename usually.
-                // Let's assume if filename matches, it's the same file for now (optimization).
 
                 if (predictedName && await fileExists(attFolder, predictedName)) {
                     const mime = c.meta?.mime_type || c.meta?.mime || 'application/octet-stream';
@@ -74,19 +72,20 @@ async function saveConversationToDisk(handle: FileSystemDirectoryHandle, conv: C
                         name: predictedName,
                         mime: mime,
                     });
+                    Logger.debug('AutoSave', `Attachment exists (predicted): ${predictedName}`);
                     continue;
                 }
 
                 const res = await downloadPointerOrFileAsBlob(c);
                 const safeName = sanitize(res.filename);
 
-                // Double check existence with the actual resolved filename
                 if (predictedName !== safeName && await fileExists(attFolder, safeName)) {
                     meta.attachments.push({
                         file_id: c.file_id,
                         name: safeName,
                         mime: res.mime,
                     });
+                    Logger.debug('AutoSave', `Attachment exists (resolved): ${safeName}`);
                     continue;
                 }
 
@@ -96,8 +95,9 @@ async function saveConversationToDisk(handle: FileSystemDirectoryHandle, conv: C
                     name: safeName,
                     mime: res.mime,
                 });
+                Logger.debug('AutoSave', `Saved attachment: ${safeName}`);
             } catch (e) {
-                console.warn('Failed to save attachment', c, e);
+                Logger.warn('AutoSave', 'Failed to save attachment', c, e);
             }
         }
     }
@@ -120,19 +120,34 @@ export async function runAutoSave() {
     }
 
     setStatus('checking', 'Checking for updates...');
+    Logger.info('AutoSave', 'Starting auto-save cycle');
 
     try {
-        const state = loadState();
-        const candidates: { id: string; projectId?: string; update_time: string }[] = [];
+        const state = await loadState(); // Async load
+        const candidates: { id: string; projectId?: string; update_time: string; folder: string }[] = [];
 
-        // 1. Check Personal Conversations
+        // 1. Check Personal/Workspace Conversations
+        const currentWorkspaceId = Cred.accountId;
         const personalPage = await listConversationsPage({ limit: 20, order: 'updated' });
+
         if (personalPage?.items) {
             for (const item of personalPage.items) {
                 const local = state.conversations[item.id];
                 const remoteTime = new Date(item.update_time).getTime();
+
+                let folderName = 'Personal';
+                if (item.workspace_id) {
+                    folderName = item.workspace_id;
+                } else if (currentWorkspaceId && currentWorkspaceId !== 'x') {
+                    folderName = currentWorkspaceId;
+                }
+
                 if (!local || remoteTime > local.update_time) {
-                    candidates.push({ id: item.id, update_time: item.update_time });
+                    candidates.push({
+                        id: item.id,
+                        update_time: item.update_time,
+                        folder: folderName
+                    });
                 }
             }
         }
@@ -159,7 +174,12 @@ export async function runAutoSave() {
                     const remoteTime = item.update_time ? new Date(item.update_time).getTime() : Date.now();
 
                     if (!local || remoteTime > local.update_time) {
-                        candidates.push({ id: item.id, projectId: pid, update_time: item.update_time });
+                        candidates.push({
+                            id: item.id,
+                            projectId: pid,
+                            update_time: item.update_time,
+                            folder: pid // Use Project ID as folder name
+                        });
                     }
                 }
             }
@@ -167,25 +187,30 @@ export async function runAutoSave() {
 
         if (candidates.length === 0) {
             setStatus('idle', 'No updates found');
+            Logger.info('AutoSave', 'No updates found');
             return;
         }
 
         setStatus('saving', `Saving ${candidates.length} conversations...`);
+        Logger.info('AutoSave', `Found ${candidates.length} updates`);
 
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i];
-            setStatus('saving', `Saving ${i + 1}/${candidates.length}: ${c.id}`);
+            const typeStr = c.projectId ? `[Project ${c.projectId}]` : (c.folder === 'Personal' ? '[Personal]' : `[Workspace ${c.folder}]`);
+            setStatus('saving', `Saving ${i + 1}/${candidates.length}: ${typeStr} ${c.id}`);
+            Logger.info('AutoSave', `Saving ${c.id} to ${c.folder}`);
 
             const conv = await fetchConvWithRetry(c.id, c.projectId);
-            await saveConversationToDisk(rootHandle, conv);
+            await saveConversationToDisk(rootHandle, conv, c.folder);
 
-            updateConversationState(c.id, new Date(c.update_time).getTime(), Date.now());
+            await updateConversationState(c.id, new Date(c.update_time).getTime(), Date.now(), c.folder);
         }
 
         setStatus('idle', 'All saved');
+        Logger.info('AutoSave', 'Cycle completed successfully');
 
     } catch (e: any) {
-        console.error('Auto-save failed', e);
+        Logger.error('AutoSave', 'Auto-save failed', e);
         setStatus('error', e.message || 'Unknown error');
     }
 }
@@ -194,12 +219,14 @@ let loopTimer: number | null = null;
 
 export function startAutoSaveLoop(intervalMs = 5 * 60 * 1000) {
     if (loopTimer) return;
+    Logger.info('AutoSave', `Starting loop with interval ${intervalMs}ms`);
     runAutoSave(); // Run immediately
     loopTimer = window.setInterval(runAutoSave, intervalMs);
 }
 
 export function stopAutoSaveLoop() {
     if (loopTimer) {
+        Logger.info('AutoSave', 'Stopping loop');
         clearInterval(loopTimer);
         loopTimer = null;
     }

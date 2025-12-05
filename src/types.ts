@@ -12,6 +12,7 @@ export interface Conversation {
   is_archived: boolean;
   safe_urls: string[];
   default_model_slug: string;
+  workspace_id?: string;
 }
 
 export interface ConversationNode {

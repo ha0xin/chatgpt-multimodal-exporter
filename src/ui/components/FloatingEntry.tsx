@@ -8,7 +8,8 @@ import { Conversation } from '../../types';
 import { showBatchExportDialog } from '../dialogs/BatchExportDialog';
 import { showFilePreviewDialog } from '../dialogs/FilePreviewDialog';
 import { toast } from 'sonner';
-import { runAutoSave, subscribeStatus, pickAndSaveRootHandle, getRootHandle, startAutoSaveLoop, AutoSaveStatus } from '../../autoSave';
+import { subscribeStatus, getRootHandle, startAutoSaveLoop, AutoSaveStatus } from '../../autoSave';
+import { AutoSaveSettings } from './AutoSaveSettings';
 
 export function FloatingEntry() {
     const [status, setStatus] = useState({ hasToken: false, hasAcc: false, debug: '' });
@@ -16,6 +17,9 @@ export function FloatingEntry() {
     const [filesBusy, setFilesBusy] = useState(false);
     const [jsonTitle, setJsonTitle] = useState('导出当前对话 JSON');
     const [filesTitle, setFilesTitle] = useState('下载当前对话中可识别的文件/指针');
+    const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>({ lastRun: 0, state: 'idle', message: '' });
+    const [showSettings, setShowSettings] = useState(false);
+    const [workspaceInfo, setWorkspaceInfo] = useState('Checking...');
 
     const lastConvData = useRef<Conversation | null>(null);
 
@@ -35,8 +39,6 @@ export function FloatingEntry() {
         return () => clearInterval(timer);
     }, []);
 
-    const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>({ lastRun: 0, state: 'idle', message: '' });
-
     useEffect(() => {
         // Auto-start loop if handle exists
         getRootHandle().then(h => {
@@ -45,27 +47,23 @@ export function FloatingEntry() {
         return subscribeStatus(setAutoSaveStatus);
     }, []);
 
-    const handleAutoSave = async () => {
-        try {
-            let handle = await getRootHandle();
-            if (!handle) {
-                handle = await pickAndSaveRootHandle();
-                if (handle) {
-                    startAutoSaveLoop();
-                    toast.success('自动保存已开启');
-                }
+    useEffect(() => {
+        const updateWs = () => {
+            // Only update if we have confirmed account status
+            if (!status.hasAcc) {
+                setWorkspaceInfo('Checking...');
+                return;
+            }
+
+            const acc = Cred.accountId;
+            if (!acc || acc === 'x') {
+                setWorkspaceInfo('Personal');
             } else {
-                // If already configured, maybe trigger a manual run?
-                runAutoSave();
-                toast.success('正在检查更新...');
+                setWorkspaceInfo(`Workspace: ${acc.slice(0, 8)}...`);
             }
-        } catch (e: any) {
-            console.error(e);
-            if (e.name !== 'AbortError') {
-                toast.error('开启自动保存失败: ' + e.message);
-            }
-        }
-    };
+        };
+        updateWs();
+    }, [status.hasAcc]); // Depend on status.hasAcc
 
     const handleJsonExport = async () => {
         const id = convId();
@@ -132,8 +130,6 @@ export function FloatingEntry() {
 
             // Note: showFilePreviewDialog is still imperative/callback-based for now
             showFilePreviewDialog(cands, async (selected) => {
-                // This callback runs when user confirms selection
-                // We need to update state here, but be careful about mounted state if component unmounts (unlikely here)
                 setFilesBusy(true);
                 setFilesTitle(`下载中 (${selected.length})…`);
 
@@ -149,17 +145,6 @@ export function FloatingEntry() {
                     setFilesBusy(false);
                 }
             });
-            // If dialog is cancelled, we might stay busy? 
-            // The current dialog implementation doesn't seem to have a cancel callback easily accessible here
-            // without refactoring the dialogs. For now, we'll reset busy state immediately 
-            // because the dialog is non-blocking in terms of UI thread (it's a DOM overlay).
-            // Actually, looking at miniEntry.ts, it sets disabled=true then waits for callback.
-            // If user cancels dialog, the button remains disabled? 
-            // The existing dialogs likely have a close button that doesn't trigger the callback.
-            // We'll assume for now we should just reset busy immediately after showing dialog, 
-            // OR we accept that "busy" means "dialog is open or downloading".
-            // Since we can't easily know when dialog closes without refactoring it, 
-            // let's just set busy=false here, and let the callback set it true again.
             setFilesBusy(false);
 
         } catch (e: any) {
@@ -174,16 +159,31 @@ export function FloatingEntry() {
         showBatchExportDialog();
     };
 
+    const handleAutoSaveClick = () => {
+        setShowSettings(true);
+    };
+
     const isOk = status.hasToken && status.hasAcc;
 
     return (
         <div className="cgptx-mini-wrap">
-            <div
-                className={`cgptx-mini-badge ${isOk ? 'ok' : 'bad'}`}
-                id="cgptx-mini-badge"
-                title={status.debug}
-            >
-                {`Token: ${status.hasToken ? '✔' : '✖'} / Account: ${status.hasAcc ? '✔' : '✖'}`}
+            {showSettings && (
+                <AutoSaveSettings
+                    status={autoSaveStatus}
+                    onClose={() => setShowSettings(false)}
+                />
+            )}
+            <div className="cgptx-mini-badges-col">
+                <div
+                    className={`cgptx-mini-badge ${isOk ? 'ok' : 'bad'}`}
+                    id="cgptx-mini-badge"
+                    title={status.debug}
+                >
+                    {`Token: ${status.hasToken ? '✔' : '✖'} / Account: ${status.hasAcc ? '✔' : '✖'}`}
+                </div>
+                <div className="cgptx-mini-badge info" title="Current Workspace Context">
+                    {workspaceInfo}
+                </div>
             </div>
             <div className="cgptx-mini-btn-row">
                 <button
@@ -225,8 +225,8 @@ export function FloatingEntry() {
                 <button
                     id="cgptx-mini-btn-autosave"
                     className={`cgptx-mini-btn ${autoSaveStatus.state === 'saving' ? 'busy' : ''}`}
-                    title={`自动保存 (每5分钟)\n状态: ${autoSaveStatus.state}\n${autoSaveStatus.message}`}
-                    onClick={handleAutoSave}
+                    title={`自动保存设置\n状态: ${autoSaveStatus.state}`}
+                    onClick={handleAutoSaveClick}
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -235,6 +235,14 @@ export function FloatingEntry() {
                     </svg>
                 </button>
             </div>
+            <style>{`
+                .cgptx-mini-badges-col {
+                    display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; align-items: flex-end;
+                }
+                .cgptx-mini-badge.info {
+                    background: #e0f2fe; color: #0369a1; border-color: #bae6fd;
+                }
+            `}</style>
         </div>
     );
 }
