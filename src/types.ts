@@ -102,11 +102,32 @@ export interface BatchExportSummary {
     createdAt: string;
     count: number;
   }[];
-  attachments_map: any[];
   failed: {
     conversations: any[];
     attachments: any[];
   };
+}
+
+export interface ConversationMetadata {
+  id: string;
+  title: string;
+  create_time: number;
+  update_time: number;
+  model_slug: string;
+  attachments: {
+    pointer: string;
+    file_id: string;
+    original_name: string;
+    saved_as: string;
+    size_bytes: number | null;
+    mime: string;
+    source: string;
+  }[];
+  failed_attachments: {
+    pointer: string;
+    file_id: string;
+    error: string;
+  }[];
 }
 
 export interface DownloadResult {

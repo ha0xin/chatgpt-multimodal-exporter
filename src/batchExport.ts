@@ -57,17 +57,11 @@ export async function runBatchExport({
       createdAt: p.createdAt || '',
       count: Array.isArray(p.convs) ? p.convs.length : 0,
     })),
-    attachments_map: [],
     failed: { conversations: [], attachments: [] },
   };
 
   const folderNameByProjectId = buildProjectFolderNames(projects || []);
-  const rootJsonFolder = zip.folder('json');
-  const rootAttFolder = zip.folder('attachments');
-  const projCache = new Map<
-    string,
-    { json: JSZip | null; att: JSZip | null }
-  >();
+  const projCache = new Map<string, JSZip | null>();
 
   const results = await fetchConversationsBatch(tasks, concurrency, progressCb, cancelRef);
   if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
@@ -88,22 +82,17 @@ export async function runBatchExport({
       continue;
     }
     const isProject = !!t.projectId;
-    let baseFolderJson = rootJsonFolder;
-    let baseFolderAtt = rootAttFolder;
+    let baseFolder: JSZip | null = zip;
     let seq = '';
+
     if (isProject && t.projectId) {
       const fname = folderNameByProjectId.get(t.projectId) || sanitize(t.projectId || 'project');
       let cache = projCache.get(t.projectId);
       if (!cache) {
-        const rootFolder = zip.folder(`projects/${fname}`);
-        cache = {
-          json: rootFolder ? rootFolder.folder('json') : null,
-          att: rootFolder ? rootFolder.folder('attachments') : null,
-        };
+        cache = zip.folder(fname);
         projCache.set(t.projectId, cache);
       }
-      baseFolderJson = cache.json || rootJsonFolder;
-      baseFolderAtt = cache.att || rootAttFolder;
+      baseFolder = cache || zip;
       projSeq[t.projectId] = (projSeq[t.projectId] || 0) + 1;
       seq = String(projSeq[t.projectId]).padStart(3, '0');
     } else {
@@ -112,66 +101,81 @@ export async function runBatchExport({
     }
 
     const title = sanitize(data?.title || '');
-    const baseName = `${seq}_${title || 'chat'}_${t.id}`;
-    const jsonName = `${baseName}.json`;
-    if (baseFolderJson) {
-      baseFolderJson.file(jsonName, JSON.stringify(data, null, 2));
-    } else {
-      zip.file(jsonName, JSON.stringify(data, null, 2));
-    }
+    const convFolderName = `${seq}_${title || 'chat'}_${t.id}`;
+    const convFolder = baseFolder ? baseFolder.folder(convFolderName) : null;
 
-    if (!includeAttachments) {
-      if (progressCb) progressCb(80, `写入 JSON：${i + 1}/${tasks.length}`);
+    if (!convFolder) {
+      // Should not happen
       continue;
     }
 
-    const candidates = collectFileCandidates(data).map((x) => ({
-      ...x,
-      project_id: t.projectId || '',
-    }));
-    if (!candidates.length) {
-      if (progressCb) progressCb(80, `附件：${i + 1}/${tasks.length}（无）`);
-      continue;
-    }
-    const convAttFolder = baseFolderAtt ? baseFolderAtt.folder(baseName) : null;
-    const usedNames = new Set<string>();
-    for (const c of candidates) {
-      if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
-      const pointerKey = c.pointer || c.file_id || '';
-      const originalName = (c.meta && (c.meta.name || c.meta.file_name)) || '';
-      let finalName = '';
-      try {
-        const res = await downloadPointerOrFileAsBlob(c);
-        finalName = res.filename || `${sanitize(pointerKey) || 'file'}.bin`;
-        if (usedNames.has(finalName)) {
-          let cnt = 2;
-          while (usedNames.has(`${cnt}_${finalName}`)) cnt++;
-          finalName = `${cnt}_${finalName}`;
+    convFolder.file('conversation.json', JSON.stringify(data, null, 2));
+
+    const convMeta: import('./types').ConversationMetadata = {
+      id: data.conversation_id || t.id,
+      title: data.title || '',
+      create_time: data.create_time,
+      update_time: data.update_time,
+      model_slug: data.default_model_slug,
+      attachments: [],
+      failed_attachments: [],
+    };
+
+    if (includeAttachments) {
+      const candidates = collectFileCandidates(data).map((x) => ({
+        ...x,
+        project_id: t.projectId || '',
+      }));
+
+      if (candidates.length > 0) {
+        const attFolder = convFolder.folder('attachments');
+        const usedNames = new Set<string>();
+        for (const c of candidates) {
+          if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
+          const pointerKey = c.pointer || c.file_id || '';
+          const originalName = (c.meta && (c.meta.name || c.meta.file_name)) || '';
+          let finalName = '';
+          try {
+            const res = await downloadPointerOrFileAsBlob(c);
+            finalName = res.filename || `${sanitize(pointerKey) || 'file'}.bin`;
+            if (usedNames.has(finalName)) {
+              let cnt = 2;
+              while (usedNames.has(`${cnt}_${finalName}`)) cnt++;
+              finalName = `${cnt}_${finalName}`;
+            }
+            usedNames.add(finalName);
+            if (attFolder) attFolder.file(finalName, res.blob);
+
+            convMeta.attachments.push({
+              pointer: c.pointer || '',
+              file_id: c.file_id || '',
+              original_name: originalName,
+              saved_as: finalName,
+              size_bytes: c.meta?.size_bytes || c.meta?.size || c.meta?.file_size || c.meta?.file_size_bytes || null,
+              mime: res.mime || c.meta?.mime_type || '',
+              source: c.source || '',
+            });
+          } catch (e: any) {
+            const errorMsg = e && e.message ? e.message : String(e);
+            convMeta.failed_attachments.push({
+              pointer: c.pointer || '',
+              file_id: c.file_id || '',
+              error: errorMsg,
+            });
+            summary.failed.attachments.push({
+              conversation_id: data.conversation_id || t.id,
+              project_id: t.projectId || '',
+              pointer: c.pointer || c.file_id || '',
+              error: errorMsg,
+            });
+          }
         }
-        usedNames.add(finalName);
-        if (convAttFolder) convAttFolder.file(finalName, res.blob);
-        summary.attachments_map.push({
-          conversation_id: data.conversation_id || t.id,
-          project_id: t.projectId || '',
-          pointer: c.pointer || '',
-          file_id: c.file_id || '',
-          saved_as: finalName,
-          source: c.source || '',
-          mime: res.mime || c.meta?.mime_type || '',
-          original_name: originalName,
-          size_bytes:
-            c.meta?.size_bytes || c.meta?.size || c.meta?.file_size || c.meta?.file_size_bytes || null,
-        });
-      } catch (e: any) {
-        summary.failed.attachments.push({
-          conversation_id: data.conversation_id || t.id,
-          project_id: t.projectId || '',
-          pointer: c.pointer || c.file_id || '',
-          error: e && e.message ? e.message : String(e),
-        });
       }
     }
-    if (progressCb) progressCb(80 + Math.round(((i + 1) / tasks.length) * 15), `附件：${i + 1}/${tasks.length}`);
+
+    convFolder.file('metadata.json', JSON.stringify(convMeta, null, 2));
+
+    if (progressCb) progressCb(80 + Math.round(((i + 1) / tasks.length) * 15), `处理：${i + 1}/${tasks.length}`);
   }
 
   zip.file('summary.json', JSON.stringify(summary, null, 2));
