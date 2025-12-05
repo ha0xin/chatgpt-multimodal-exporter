@@ -7,6 +7,7 @@ import { downloadSelectedFiles } from '../../downloads';
 import { Conversation } from '../../types';
 import { showBatchExportDialog } from '../dialogs/BatchExportDialog';
 import { showFilePreviewDialog } from '../dialogs/FilePreviewDialog';
+import { toast } from 'sonner';
 
 export function FloatingEntry() {
     const [status, setStatus] = useState({ hasToken: false, hasAcc: false, debug: '' });
@@ -37,7 +38,7 @@ export function FloatingEntry() {
         const id = convId();
         const pid = projectId();
         if (!id) {
-            alert('未检测到会话 ID，请在具体对话页面使用（URL 中应包含 /c/xxxx）。');
+            toast.error('未检测到会话 ID，请在具体对话页面使用（URL 中应包含 /c/xxxx）。');
             return;
         }
 
@@ -57,9 +58,10 @@ export function FloatingEntry() {
             const filename = `${title || 'chat'}_${id}.json`;
             saveJSON(data, filename);
             setJsonTitle('导出完成 ✅（点击可重新导出）');
+            toast.success('导出 JSON 完成');
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 导出失败：', e);
-            alert('导出失败: ' + (e && e.message ? e.message : e));
+            toast.error('导出失败: ' + (e && e.message ? e.message : e));
             setJsonTitle('导出失败 ❌（点击重试）');
         } finally {
             setJsonBusy(false);
@@ -70,7 +72,7 @@ export function FloatingEntry() {
         const id = convId();
         const pid = projectId();
         if (!id) {
-            alert('未检测到会话 ID，请在具体对话页面使用（URL 中应包含 /c/xxxx）。');
+            toast.error('未检测到会话 ID，请在具体对话页面使用（URL 中应包含 /c/xxxx）。');
             return;
         }
 
@@ -89,8 +91,9 @@ export function FloatingEntry() {
 
             const cands = collectFileCandidates(data);
             if (!cands.length) {
-                alert('未找到可下载的文件/指针。');
+                toast.info('未找到可下载的文件/指针。');
                 setFilesTitle('未找到文件');
+                setFilesBusy(false);
                 return;
             }
 
@@ -104,10 +107,10 @@ export function FloatingEntry() {
                 try {
                     const res = await downloadSelectedFiles(selected);
                     setFilesTitle(`完成 ${res.ok}/${res.total}（可再次点击）`);
-                    alert(`文件下载完成，成功 ${res.ok}/${res.total}，详情见控制台。`);
+                    toast.success(`文件下载完成，成功 ${res.ok}/${res.total}`);
                 } catch (e: any) {
                     console.error('[ChatGPT-Multimodal-Exporter] 下载失败：', e);
-                    alert('下载失败: ' + (e && e.message ? e.message : e));
+                    toast.error('下载失败: ' + (e && e.message ? e.message : e));
                     setFilesTitle('下载失败 ❌');
                 } finally {
                     setFilesBusy(false);
@@ -128,7 +131,7 @@ export function FloatingEntry() {
 
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 下载失败：', e);
-            alert('下载失败: ' + (e && e.message ? e.message : e));
+            toast.error('下载失败: ' + (e && e.message ? e.message : e));
             setFilesTitle('下载失败 ❌');
             setFilesBusy(false);
         }
