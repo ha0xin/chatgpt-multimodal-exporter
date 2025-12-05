@@ -4,11 +4,12 @@ import { Cred } from '../../cred';
 export interface CredStatus {
     hasToken: boolean;
     hasAcc: boolean;
+    userLabel: string;
     debug: string;
 }
 
 export function useCredentialStatus() {
-    const [status, setStatus] = useState<CredStatus>({ hasToken: false, hasAcc: false, debug: '' });
+    const [status, setStatus] = useState<CredStatus>({ hasToken: false, hasAcc: false, userLabel: '', debug: '' });
 
     const refreshCredStatus = async () => {
         await Cred.ensureViaSession();
@@ -16,6 +17,7 @@ export function useCredentialStatus() {
         setStatus({
             hasToken: !!Cred.token,
             hasAcc: !!Cred.accountId,
+            userLabel: Cred.userLabel,
             debug: Cred.debug
         });
     };

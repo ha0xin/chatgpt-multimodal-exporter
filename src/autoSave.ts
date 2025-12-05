@@ -1,6 +1,6 @@
 import { listConversationsPage, listGizmosSidebar, listProjectConversations, fetchConvWithRetry } from './conversations';
 import { Cred } from './cred';
-import { loadState, updateConversationState } from './autoSaveState';
+import { loadState, updateConversationState, updateWorkspaceCheckTime, updateGizmoCheckTime, saveState } from './autoSaveState';
 import { getRootHandle, verifyPermission, ensureFolder, writeFile, fileExists } from './fileSystem';
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
@@ -33,11 +33,11 @@ function setStatus(state: AutoSaveStatus['state'], message: string) {
     listeners.forEach((cb) => cb(currentStatus));
 }
 
-async function saveConversationToDisk(handle: FileSystemDirectoryHandle, conv: Conversation, parentFolderName: string) {
+async function saveConversationToDisk(userFolder: FileSystemDirectoryHandle, conv: Conversation, parentFolderName: string) {
     const id = conv.conversation_id;
 
-    // Ensure parent folder (Personal or ProjectID)
-    const parentFolder = await ensureFolder(handle, parentFolderName);
+    // Ensure parent folder (Personal or WorkspaceID inside User folder)
+    const parentFolder = await ensureFolder(userFolder, parentFolderName);
     // Ensure conversation folder
     const convFolder = await ensureFolder(parentFolder, id);
 
@@ -123,11 +123,32 @@ export async function runAutoSave() {
     Logger.info('AutoSave', 'Starting auto-save cycle');
 
     try {
-        const state = await loadState(); // Async load
-        const candidates: { id: string; projectId?: string; update_time: string; folder: string }[] = [];
+        // Ensure User folder (Email or AccountID)
+        const userFolder = await ensureFolder(rootHandle, Cred.userLabel);
+
+        const state = await loadState(userFolder); // Async load
+
+        // Update User Info in State
+        if (state.user.id !== (Cred.accountId || '') || state.user.email !== Cred.userLabel) {
+            state.user = {
+                id: Cred.accountId || '',
+                email: Cred.userLabel
+            };
+            await saveState(state, userFolder);
+        }
+
+        const candidates: { id: string; projectId?: string; update_time: string; folder: string, workspaceKey: string }[] = [];
 
         // 1. Check Personal/Workspace Conversations
         const currentWorkspaceId = Cred.accountId;
+
+        // Track check time for this workspace context
+        let currentWorkspaceKey = 'personal';
+        if (currentWorkspaceId && currentWorkspaceId !== 'personal' && currentWorkspaceId !== 'x') {
+            currentWorkspaceKey = currentWorkspaceId;
+        }
+        await updateWorkspaceCheckTime(userFolder, currentWorkspaceKey);
+
         const personalPage = await listConversationsPage({ limit: 20, order: 'updated' });
 
         if (personalPage?.items) {
@@ -135,6 +156,8 @@ export async function runAutoSave() {
                 const local = state.conversations[item.id];
                 const remoteTime = new Date(item.update_time).getTime();
 
+                // Determine folder name (Project or Personal or WorkspaceID)
+                // For main list, it's either Personal or the Workspace ID
                 let folderName = 'Personal';
                 if (item.workspace_id) {
                     folderName = item.workspace_id;
@@ -146,13 +169,14 @@ export async function runAutoSave() {
                     candidates.push({
                         id: item.id,
                         update_time: item.update_time,
-                        folder: folderName
+                        folder: folderName,
+                        workspaceKey: currentWorkspaceKey
                     });
                 }
             }
         }
 
-        // 2. Check Projects
+        // 2. Check Projects (Gizmos)
         const sidebar = await listGizmosSidebar();
         const projects = new Set<string>();
 
@@ -167,6 +191,9 @@ export async function runAutoSave() {
         }
 
         for (const pid of projects) {
+            // Update check time for project (Gizmo) UNDER the current workspace
+            await updateGizmoCheckTime(userFolder, currentWorkspaceKey, pid);
+
             const projPage = await listProjectConversations({ projectId: pid, limit: 10 });
             if (projPage?.items) {
                 for (const item of projPage.items) {
@@ -178,7 +205,14 @@ export async function runAutoSave() {
                             id: item.id,
                             projectId: pid,
                             update_time: item.update_time,
-                            folder: pid // Use Project ID as folder name
+                            // Store under current workspace, separate folder?
+                            // User request implies strict nesting in state, but folder structure is less clear.
+                            // keeping flattened folder structure [User]/[GizmoID]/... for now as it's cleaner for file browsing
+                            // UNLESS user complains.
+                            // But for STATE tracking, we pass workspaceKey.
+
+                            folder: pid,
+                            workspaceKey: currentWorkspaceKey
                         });
                     }
                 }
@@ -196,14 +230,21 @@ export async function runAutoSave() {
 
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i];
-            const typeStr = c.projectId ? `[Project ${c.projectId}]` : (c.folder === 'Personal' ? '[Personal]' : `[Workspace ${c.folder}]`);
+            const typeStr = c.projectId ? `[Gizmo ${c.projectId}]` : `[${c.folder}]`;
             setStatus('saving', `Saving ${i + 1}/${candidates.length}: ${typeStr} ${c.id}`);
             Logger.info('AutoSave', `Saving ${c.id} to ${c.folder}`);
 
             const conv = await fetchConvWithRetry(c.id, c.projectId);
-            await saveConversationToDisk(rootHandle, conv, c.folder);
+            await saveConversationToDisk(userFolder, conv, c.folder);
 
-            await updateConversationState(c.id, new Date(c.update_time).getTime(), Date.now(), c.folder);
+            await updateConversationState(
+                userFolder,
+                c.id,
+                new Date(c.update_time).getTime(),
+                Date.now(),
+                c.workspaceKey,
+                c.projectId // Pass gizmo_id if present
+            );
         }
 
         setStatus('idle', 'All saved');

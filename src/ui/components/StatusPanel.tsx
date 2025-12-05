@@ -38,6 +38,11 @@ export function StatusPanel({ status, isOk }: StatusPanelProps) {
 			<div className="cgptx-mini-badge info" title="Current Workspace Context">
 				{workspaceInfo}
 			</div>
+			{status.userLabel && (
+				<div className="cgptx-mini-badge info" title="Current User" style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+					User: {status.userLabel}
+				</div>
+			)}
 
 		</div>
 	);

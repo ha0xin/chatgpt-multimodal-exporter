@@ -1,6 +1,7 @@
 export const Cred = (() => {
   let token: string | null = null;
   let accountId: string | null = null;
+  let mainUser: string | null = null; // Email or name
 
   // Track sources for debugging/logging
   let tokenSource: string = '';
@@ -10,7 +11,7 @@ export const Cred = (() => {
   // Avoid re-initializing interceptors if module is re-evaluated (though unlikely in this setup)
   let interceptorsInitialized = false;
 
-  const log = (key: 'Token' | 'Account ID', val: string, source: string) => {
+  const log = (key: 'Token' | 'Account ID' | 'User', val: string, source: string) => {
     console.log(`[Cred] ${key} captured via ${source}:`, val);
   };
 
@@ -119,7 +120,7 @@ export const Cred = (() => {
     }
   };
 
-  // --- 2. Passive Detection (Cookie / NextData) ---
+  // --- 2. Passive Detection (Cookie / CLIENT_BOOTSTRAP) ---
   const checkPassiveSources = () => {
     // Cookie for Account ID
     const m = document.cookie.match(/(?:^|;\s*)_account=([^;]+)/);
@@ -128,24 +129,35 @@ export const Cred = (() => {
       updateAccountId(val, 'Cookie');
     }
 
-    // __NEXT_DATA__ for Account ID
-    // Sometimes helpful if cookie is missing or default
+    // CLIENT_BOOTSTRAP for User Email and Account ID
     try {
-      const nextScript = document.getElementById('__NEXT_DATA__');
-      if (nextScript && nextScript.textContent) {
-        const data = JSON.parse(nextScript.textContent);
-        const accounts = data?.props?.pageProps?.user?.accounts;
-        if (accounts) {
-          // Just grab the first valid one if we don't have one
-          if (!accountId) {
-            const first = Object.values(accounts).find((a: any) => a?.account?.account_id);
-            if (first) {
-              updateAccountId((first as any).account.account_id, 'NextData');
-            }
-          }
+      const bs = (window as any).CLIENT_BOOTSTRAP;
+      if (bs) {
+        // User Email
+        if (bs.user && bs.user.email) {
+          updateMainUser(bs.user.email, 'CLIENT_BOOTSTRAP');
+        }
+
+        // Session Account ID (fallback)
+        if (bs.session && bs.session.account && bs.session.account.id) {
+          // We prefer the _account cookie usually, but this is a good source too
+          // Only use if we don't have one? Or trust it?
+          // Let's use it if we don't have one yet or just update it.
+          // Usually _account cookie tracks the *current* workspace. 
+          // session.account might be the default one.
+          // Let's rely on cookie for *current* workspace ID, 
+          // but we can use this for Main User info if needed (though we used user.email above).
         }
       }
     } catch (e) { }
+  };
+
+  const updateMainUser = (val: string, source: string) => {
+    if (!val) return;
+    if (mainUser !== val) {
+      mainUser = val;
+      log('User', mainUser, source);
+    }
   };
 
   // --- 3. Active Fetching (API) ---
@@ -246,8 +258,9 @@ export const Cred = (() => {
   const debugText = (): string => {
     const tok = token ? `${mask(token)} (${tokenSource})` : '未获取';
     const acc = accountId ? `${accountId} (${accountIdSource})` : '未获取';
+    const usr = mainUser ? `${mainUser}` : '未获取';
     const err = lastErr ? `\n错误：${lastErr}` : '';
-    return `Token：${tok}\nAccount：${acc}${err}`;
+    return `Token：${tok}\nAccount：${acc}\nUser: ${usr}${err}`;
   };
 
   // Initialize immediately
@@ -260,6 +273,7 @@ export const Cred = (() => {
     getAuthHeaders,
     get token() { return token; },
     get accountId() { return accountId; },
+    get userLabel() { return mainUser || accountId || 'UnknownUser'; },
     get debug() { return debugText(); },
   };
 })();
