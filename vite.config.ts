@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 import monkey, { cdn } from 'vite-plugin-monkey';
+import packageJson from './package.json'
 
 export default defineConfig({
   plugins: [
@@ -10,9 +11,9 @@ export default defineConfig({
       userscript: {
         name: 'ChatGPT-Multimodal-Exporter',
         namespace: 'chatgpt-multimodal-exporter',
-        version: '0.5.0',
-        author: 'ha0xin',
-        description: '导出对话 json + 会话中的多模态文件（图片、音频、sandbox 文件等）',
+        author: packageJson.author,
+        description: packageJson.description,
+        license: packageJson.license,
         icon: 'https://chat.openai.com/favicon.ico',
         match: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
         'run-at': 'document-end',

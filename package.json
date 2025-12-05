@@ -1,8 +1,11 @@
 {
   "name": "chatgpt-multimodal-exporter",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.5.0",
   "type": "module",
+  "author": "ha0xin",
+  "license": "MIT",
+  "description": "导出 ChatGPT 对话 json + 会话中的多模态文件（图片、音频、sandbox 文件等）",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
