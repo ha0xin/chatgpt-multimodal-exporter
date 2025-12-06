@@ -1,3 +1,6 @@
+import { Logger } from './logger';
+import { unsafeWindow } from '$';
+
 export const Cred = (() => {
   let token: string | null = null;
   let accountId: string | null = null;
@@ -131,7 +134,16 @@ export const Cred = (() => {
 
     // CLIENT_BOOTSTRAP for User Email and Account ID
     try {
-      const bs = (window as any).CLIENT_BOOTSTRAP;
+      // https://deepwiki.com/search/unsafewindowlet-bs-unsafewindo_7d2850f6-596f-4cad-8791-de7557543ad6?mode=fast
+      let bs = (unsafeWindow as any).CLIENT_BOOTSTRAP;
+      console.log('[Cred] CLIENT_BOOTSTRAP inspection:', {
+        exists: !!bs,
+        source: 'unsafeWindow',
+        hasUser: !!bs?.user,
+        email: bs?.user?.email,
+        session: !!bs?.session
+      });
+
       if (bs) {
         // User Email
         if (bs.user && bs.user.email) {
@@ -260,6 +272,40 @@ export const Cred = (() => {
     return accountId || '';
   };
 
+  const ensureReady = async (timeout = 10000): Promise<boolean> => {
+    // Helper to check if we have all 3 critical pieces
+    const isReady = () => !!token && !!mainUser && !!accountId;
+
+    // 1. Fast path
+    if (isReady()) return true;
+
+    // 2. Try passive
+    checkPassiveSources();
+    if (isReady()) return true;
+
+    // 3. Try ensuring via session (active fetch)
+    Logger.info('Cred', 'Waiting for credentials readiness (Token + Account + User)...');
+
+    const start = Date.now();
+
+    // Attempt standard ensure sequence
+    // This tries 3 times by default
+    const p = ensureViaSession();
+
+    // Polling check for success
+    while (Date.now() - start < timeout) {
+      if (isReady()) return true;
+      // Wait a bit
+      await new Promise(r => setTimeout(r, 500));
+      // Re-check just in case async things settled
+    }
+
+    // Wait for the promise to at least settle if it hasnt (though loop handles time)
+    await p;
+
+    return isReady();
+  };
+
   const debugText = (): string => {
     const tok = token ? `${mask(token)} (${tokenSource})` : '未获取';
     const acc = accountId ? `${accountId} (${accountIdSource})` : '未获取';
@@ -273,6 +319,7 @@ export const Cred = (() => {
 
   return {
     ensureViaSession,
+    ensureReady,
     ensureAccountId,
     getAuthHeaders,
     get token() { return token; },

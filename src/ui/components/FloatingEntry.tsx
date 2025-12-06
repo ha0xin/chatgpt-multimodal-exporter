@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { subscribeStatus, getRootHandle, startAutoSaveLoop, AutoSaveStatus } from '../../autoSave';
+import { Cred } from '../../cred';
 import { useCredentialStatus } from '../hooks/useCredentialStatus';
 import { StatusPanel } from './StatusPanel';
 import { ExportJsonButton } from './ExportJsonButton';
@@ -20,8 +21,16 @@ export function FloatingEntry() {
 
   useEffect(() => {
     // Auto-start loop if handle exists
-    getRootHandle().then(h => {
-      if (h) startAutoSaveLoop();
+    getRootHandle().then(async (h) => {
+      if (h) {
+        // Wait for credentials before starting the loop
+        const credReady = await Cred.ensureReady();
+        if (credReady) {
+          startAutoSaveLoop();
+        } else {
+          console.warn('AutoSave not started: User credentials not ready');
+        }
+      }
     });
     return subscribeStatus(setAutoSaveStatus);
   }, []);
