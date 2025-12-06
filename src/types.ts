@@ -135,3 +135,19 @@ export interface DownloadResult {
   ok: number;
   total: number;
 }
+
+export interface UserProfile {
+  object: string;
+  id: string;
+  email: string;
+  name: string;
+  picture: string | null;
+  created: number;
+  phone_number: string | null;
+  mfa_flag_enabled: boolean;
+  email_domain_type?: string;
+  orgs?: {
+    object: string;
+    data: any[];
+  };
+}

@@ -160,7 +160,7 @@ export const Cred = (() => {
     }
   };
 
-  // --- 3. Active Fetching (API) ---
+  // --- Active Fetching (API) ---
 
   const getAuthHeaders = (): Headers => {
     const h = new Headers();
@@ -198,16 +198,10 @@ export const Cred = (() => {
       const resp = await fetch(url, { headers: getAuthHeaders(), credentials: 'include' });
       if (!resp.ok) return null;
       const data = await resp.json();
-      // Try to find the detailed account
       const accounts = data.accounts || {};
-      // Simple heuristic: logic usually depends on user selection, 
-      // but here we just try to find *a* valid ID if we don't have one.
-      // Or adhere to priority? For now, just finding one is good.
       const first = Object.values(accounts).find((a: any) => a?.account?.account_id);
       if (first) return (first as any).account.account_id;
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) { }
     return null;
   };
 
@@ -215,22 +209,26 @@ export const Cred = (() => {
 
   const ensureViaSession = async (tries = 3): Promise<boolean> => {
     // 1. Check existing
-    if (token) return true;
+    if (token) {
+      // If we have token, ensure we have user profile too
+      if (!mainUser) await ensureUserProfile();
+      return true;
+    }
 
-    // 2. Try Passive (Network/Cookie already running presumably, but maybe triggers just happened)
-    // No explicit action needed for passive network, it happens on background requests.
-    // But we can check passive static sources again.
+    // 2. Try Passive (Network/Cookie already running presumably)
     checkPassiveSources();
-    if (token) return true;
+    if (token) {
+      if (!mainUser) await ensureUserProfile();
+      return true;
+    }
 
     // 3. Active API
     for (let i = 0; i < tries; i++) {
       const t = await fetchSession();
       if (t) {
         updateToken(t, 'Session API');
-        // Once we have a token, we might naturally get account ID from subsequent requests 
-        // OR we can try to fetch it active if missing.
         if (!accountId) await ensureAccountId();
+        if (!mainUser) await ensureUserProfile();
         return true;
       }
       if (i < tries - 1) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
@@ -238,15 +236,22 @@ export const Cred = (() => {
     return !!token;
   };
 
+  const ensureUserProfile = async () => {
+    // Lazy import to avoid cycle if necessary, or just rely on module resolution
+    const { fetchCurrentUser } = await import('./api');
+    const user = await fetchCurrentUser();
+    if (user && user.email) {
+      updateMainUser(user.email, '/backend-api/me');
+    }
+  };
+
   const ensureAccountId = async (): Promise<string> => {
     if (accountId) return accountId;
 
-    // 1. Passive
     checkPassiveSources();
     if (accountId) return accountId;
 
-    // 2. Active API (needs token)
-    if (!token) await ensureViaSession(1); // Try once to get token if missing
+    if (!token) await ensureViaSession(1);
     if (token) {
       const id = await fetchAccountCheck();
       if (id) updateAccountId(id, 'Account API');
@@ -263,7 +268,6 @@ export const Cred = (() => {
     return `Token：${tok}\nAccount：${acc}\nUser: ${usr}${err}`;
   };
 
-  // Initialize immediately
   initInterceptors();
   checkPassiveSources();
 
@@ -273,7 +277,7 @@ export const Cred = (() => {
     getAuthHeaders,
     get token() { return token; },
     get accountId() { return accountId; },
-    get userLabel() { return mainUser || accountId || 'UnknownUser'; },
+    get userLabel() { return mainUser; },
     get debug() { return debugText(); },
   };
 })();

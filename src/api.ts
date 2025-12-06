@@ -1,6 +1,6 @@
 import { Cred } from './cred';
 import { projectId, sanitize, gmDownload, gmFetchBlob, inferFilename, fetchWithRetry } from './utils';
-import { Conversation } from './types';
+import { Conversation, UserProfile } from './types';
 
 export async function fetchConversation(id: string, projectId?: string): Promise<Conversation> {
   if (!Cred.token) {
@@ -149,5 +149,22 @@ export async function fetchDownloadUrlOrResponse(
     return j.download_url || j.url;
   }
   return resp;
+}
+
+export async function fetchCurrentUser(): Promise<UserProfile | null> {
+  if (!Cred.token) return null;
+  const url = `${location.origin}/backend-api/me`;
+  const headers = Cred.getAuthHeaders();
+  try {
+    const resp = await fetchWithRetry(url, { method: 'GET', headers, credentials: 'include' });
+    if (!resp.ok) {
+      console.warn('fetchCurrentUser failed', resp.status);
+      return null;
+    }
+    return await resp.json();
+  } catch (e) {
+    console.error('fetchCurrentUser error', e);
+    return null;
+  }
 }
 

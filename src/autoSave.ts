@@ -123,7 +123,12 @@ export async function runAutoSave() {
     Logger.info('AutoSave', 'Starting auto-save cycle');
 
     try {
-        // Ensure User folder (Email or AccountID)
+        // Strict check: User must be identified by email
+        if (!Cred.userLabel) {
+            throw new Error('User email not found (Strict Mode)');
+        }
+
+        // Ensure User folder (Email)
         const userFolder = await ensureFolder(rootHandle, Cred.userLabel);
 
         const state = await loadState(userFolder); // Async load
@@ -132,7 +137,7 @@ export async function runAutoSave() {
         if (state.user.id !== (Cred.accountId || '') || state.user.email !== Cred.userLabel) {
             state.user = {
                 id: Cred.accountId || '',
-                email: Cred.userLabel
+                email: Cred.userLabel!
             };
             await saveState(state, userFolder);
         }
