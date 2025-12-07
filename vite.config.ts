@@ -18,6 +18,7 @@ export default defineConfig({
         match: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
         'run-at': 'document-end',
         grant: ['GM_download', 'GM_xmlhttpRequest'],
+        connect: 'oaiusercontent.com'
       },
       build: {
         fileName: 'chatgpt-multimodal-exporter.user.js',
