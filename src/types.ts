@@ -12,6 +12,7 @@ export interface Conversation {
   is_archived: boolean;
   safe_urls: string[];
   default_model_slug: string;
+  workspace_id?: string;
 }
 
 export interface ConversationNode {
@@ -133,4 +134,20 @@ export interface ConversationMetadata {
 export interface DownloadResult {
   ok: number;
   total: number;
+}
+
+export interface UserProfile {
+  object: string;
+  id: string;
+  email: string;
+  name: string;
+  picture: string | null;
+  created: number;
+  phone_number: string | null;
+  mfa_flag_enabled: boolean;
+  email_domain_type?: string;
+  orgs?: {
+    object: string;
+    data: any[];
+  };
 }

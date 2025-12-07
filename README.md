@@ -60,3 +60,4 @@ pnpm build
 - [x] Voice Mode
 - [x] 以上功能在项目中的实现
 - [ ] 项目中用户上传的文件
+- [ ] GPTs
