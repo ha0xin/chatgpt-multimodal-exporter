@@ -1,61 +1,63 @@
 .cgptx-mini-wrap {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2147483647;
+  /* position: fixed; */
+  /* right: 16px; */
+  /* bottom: 16px; */
+  /* z-index: 2147483647; */
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row; /* Horizontal layout for sidebar */
+  align-items: center;
   gap: 8px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin-left: auto; /* Push to the right, next to collapse button */
+  margin-right: 8px; /* Spacing from collapse button */
 }
 .cgptx-mini-badge {
   font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #374151;
-  border: 1px solid #e5e7eb;
-  max-width: 260px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  text-indent: -9999px; /* Hide text, show only color */
+  border: 1px solid transparent;
   overflow: hidden;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  box-shadow: none;
+  cursor: help;
 }
 .cgptx-mini-badge.ok {
-  background: #ecfdf5;
+  background: #3fd991;
   border-color: #a7f3d0;
   color: #047857;
 }
 .cgptx-mini-badge.bad {
-  background: #fef2f2;
+  background: #d43939;
   border-color: #fecaca;
   color: #b91c1c;
 }
 .cgptx-mini-btn-row {
   display: flex;
-  gap: 8px;
+  gap: 4px; /* Tighter gap for sidebar */
 }
 .cgptx-mini-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1px solid #e5e7eb;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
   cursor: pointer;
-  background: #ffffff;
-  color: #4b5563;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: transparent;
+  color: #8e8ea0; /* Standard sidebar icon color */
+  box-shadow: none; /* Remove shadow for flat look */
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 16px; /* Smaller icon size */
   transition: all .2s ease;
 }
 .cgptx-mini-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
-  color: #2563eb;
-  border-color: #bfdbfe;
+  background: rgba(255, 255, 255, 0.1); /* Ghost hover effect */
+  color: #d9d9e3;
+  transform: none;
+  box-shadow: none;
+  border-color: transparent;
 }
 .cgptx-mini-btn:disabled {
   opacity: .6;
@@ -351,10 +353,10 @@
 /* StatusPanel Styles */
 .cgptx-mini-badges-col {
   display: flex; 
-  flex-direction: column; 
+  flex-direction: row; /* Horizontal status layout */
   gap: 4px; 
-  margin-bottom: 8px; 
-  align-items: flex-end;
+  margin-bottom: 0; 
+  align-items: center;
 }
 
 .cgptx-mini-badge.info {

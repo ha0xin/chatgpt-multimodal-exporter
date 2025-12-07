@@ -11,7 +11,6 @@ interface ExportJsonButtonProps {
 
 export function ExportJsonButton({ refreshCredStatus, onDataFetched }: ExportJsonButtonProps) {
     const [busy, setBusy] = useState(false);
-    const [title, setTitle] = useState('导出当前对话 JSON');
 
     const handleJsonExport = async () => {
         const id = convId();
@@ -22,7 +21,6 @@ export function ExportJsonButton({ refreshCredStatus, onDataFetched }: ExportJso
         }
 
         setBusy(true);
-        setTitle('导出中…');
 
         try {
             await refreshCredStatus();
@@ -34,12 +32,10 @@ export function ExportJsonButton({ refreshCredStatus, onDataFetched }: ExportJso
             const safeTitle = sanitize(data?.title || '');
             const filename = `${safeTitle || 'chat'}_${id}.json`;
             saveJSON(data, filename);
-            setTitle('导出完成 ✅（点击可重新导出）');
             toast.success('导出 JSON 完成');
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 导出失败：', e);
             toast.error('导出失败: ' + (e && e.message ? e.message : e));
-            setTitle('导出失败 ❌（点击重试）');
         } finally {
             setBusy(false);
         }
@@ -49,7 +45,7 @@ export function ExportJsonButton({ refreshCredStatus, onDataFetched }: ExportJso
         <button
             id="cgptx-mini-btn"
             className="cgptx-mini-btn"
-            title={title}
+            title="导出 JSON"
             onClick={handleJsonExport}
             disabled={busy}
         >

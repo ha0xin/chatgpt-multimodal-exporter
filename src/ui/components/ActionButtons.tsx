@@ -150,7 +150,7 @@ export function ActionButtons({ autoSaveState }: ActionButtonsProps) {
             <button
                 id="cgptx-mini-btn-batch"
                 className="cgptx-mini-btn"
-                title="批量导出 JSON + 附件（可勾选）"
+                title="批量导出"
                 onClick={handleBatchExport}
             >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
