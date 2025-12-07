@@ -289,21 +289,29 @@ export const runAutoSave = runAutoSaveCycle;
 
 // --- Leader Election & Loop ---
 
+// --- Leader Election & Loop ---
+
 let stopRequested = false;
 let isStarted = false;
+let interruptSleep: (() => void) | null = null;
+let currentIntervalMs = 5 * 60 * 1000;
 
 // The loop that Only the Leader runs
-async function leaderLoop(intervalMs: number) {
+async function leaderLoop() {
     Logger.info('AutoSave', 'I am the Leader. Starting loop.');
     
     while (!stopRequested) {
         // Calculate Next Run
-        const nextRun = Date.now() + intervalMs;
+        const nextRun = Date.now() + currentIntervalMs;
         autoSaveStore.setNextRun(nextRun);
         
-        // Wait for interval (breakable?)
-        // Simple wait for now
-        await new Promise(r => setTimeout(r, intervalMs));
+        // Wait for interval (Interruptible)
+        await new Promise<void>(resolve => {
+            interruptSleep = resolve;
+            setTimeout(resolve, currentIntervalMs);
+        });
+        interruptSleep = null;
+
         if (stopRequested) break;
 
         await runAutoSaveCycle();
@@ -311,18 +319,31 @@ async function leaderLoop(intervalMs: number) {
 }
 
 // Global start function
-export async function startAutoSaveLoop(intervalMs = 5 * 60 * 1000) {
-    if (isStarted) return;
+export async function startAutoSaveLoop(intervalMs: number = 5 * 60 * 1000) {
+    currentIntervalMs = intervalMs;
+
+    if (isStarted) {
+        // If already started, just ensure the interval is updated (which we did above)
+        // And optionally wake up the loop to apply it immediately?
+        // For now, next cycle will pick it up, or if we want immediate effect:
+        if (autoSaveStore.role.value === 'leader' && interruptSleep) {
+             Logger.info('AutoSave', 'Updating interval on running loop');
+             interruptSleep();
+        }
+        return;
+    }
+
     isStarted = true;
     stopRequested = false;
     Logger.info('AutoSave', `Initializing AutoSave system...`);
+    autoSaveStore.setStatus('idle', 'Starting...');
     
     // Initial check (Leader election logic)
-    attemptLeaderElection(intervalMs);
+    attemptLeaderElection();
 }
 
 // Recursive election attempt
-async function attemptLeaderElection(intervalMs: number) {
+async function attemptLeaderElection() {
     if (stopRequested) return;
 
     try {
@@ -334,7 +355,7 @@ async function attemptLeaderElection(intervalMs: number) {
                 // Yes, usually good practice.
                 await runAutoSaveCycle(); 
                 
-                await leaderLoop(intervalMs);
+                await leaderLoop();
             } finally {
                 // We lost leadership or loop stopped
                 autoSaveStore.setRole('unknown'); // Will become standby or leader again shortly
@@ -344,28 +365,37 @@ async function attemptLeaderElection(intervalMs: number) {
         if (!acquired) {
             // We are Standby
             autoSaveStore.setRole('standby');
-            autoSaveStore.setNextRun(0); // Clear next run if standby? Or maybe show "Standby"
+            autoSaveStore.setStatus('idle', 'Standby: Another tab is auto-saving');
+            autoSaveStore.setNextRun(0); 
             
             // Wait and retry
             // If tryAcquireLeader used {ifAvailable: true}, it returns immediately.
             // We poll every 10 seconds to see if leader died.
-            setTimeout(() => attemptLeaderElection(intervalMs), 10000);
+            setTimeout(() => attemptLeaderElection(), 10000);
         } else {
             // If we returned from acquired=true, it means we LOST leadership (loop finished or error)
             // We should retry becoming leader immediately or after delay
             if (!stopRequested) {
-                 setTimeout(() => attemptLeaderElection(intervalMs), 1000);
+                 setTimeout(() => attemptLeaderElection(), 1000);
             }
         }
     } catch (e) {
         Logger.error('AutoSave', 'Election error', e);
         // Retry logic needed
-        setTimeout(() => attemptLeaderElection(intervalMs), 10000);
+        setTimeout(() => attemptLeaderElection(), 10000);
     }
 }
 
 export function stopAutoSaveLoop() {
     stopRequested = true;
     isStarted = false;
+    
+    // Wake up leader loop if sleeping
+    if (interruptSleep) {
+        interruptSleep();
+        interruptSleep = null;
+    }
+
+    autoSaveStore.setStatus('disabled', 'Auto-save disabled');
     Logger.info('AutoSave', 'Stopping loop requested');
 }

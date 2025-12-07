@@ -9,44 +9,79 @@ interface Props {
 }
 
 export function AutoSaveSettings({ status, onClose }: Props) {
-    const [enabled, setEnabled] = useState(false);
-    const [intervalMin, setIntervalMin] = useState(5);
+    // Initial state loading
+    const [loading, setLoading] = useState(true);
+    
+    // Effective state (what is currently running)
+    const [effectiveEnabled, setEffectiveEnabled] = useState(false);
+    
+    // Pending state (what user is editing)
+    const [pendingEnabled, setPendingEnabled] = useState(false);
+    const [pendingInterval, setPendingInterval] = useState(5);
     const [debug, setDebug] = useState(Logger.isDebug());
     const [rootPath, setRootPath] = useState<string>('');
 
+    // Load initial state
     useEffect(() => {
-        // Check if enabled (loop running) - strictly speaking we don't expose if loop is running
-        // We can infer or add a getter. For now, let's assume if we have a handle, we default to enabled?
-        // Or we should add `isAutoSaveRunning()` to autoSave.ts
-        // For now, let's just manage local state and sync on mount?
-        // Actually, FloatingEntry starts it on mount if handle exists.
         getRootHandle().then(h => {
-            setEnabled(!!h);
+            const hasSetting = localStorage.getItem('chatgpt_exporter_autosave_enabled') !== null;
+            const storedEnabled = localStorage.getItem('chatgpt_exporter_autosave_enabled') === 'true';
+            
+            // Load interval
+            const storedInterval = localStorage.getItem('chatgpt_exporter_autosave_interval');
+            const initialInterval = storedInterval ? parseInt(storedInterval, 10) : 5;
+            setPendingInterval(initialInterval);
+
+            // "Effective" enabled means: Handle exists AND (Setting is true OR No Setting)
+            const isEnabledEffectively = !!h && (hasSetting ? storedEnabled : true);
+            
+            setEffectiveEnabled(isEnabledEffectively);
+            setPendingEnabled(isEnabledEffectively); // Initialize pending with effective
             setRootPath(h ? h.name : '未选择');
+            setLoading(false);
         });
     }, []);
 
-    const toggleEnabled = async () => {
-        if (enabled) {
-            stopAutoSaveLoop();
-            setEnabled(false);
-            toast.info('自动保存已暂停');
+    const handleSaveSettings = async () => {
+        // 1. Save Enabled State & Interval
+        localStorage.setItem('chatgpt_exporter_autosave_enabled', String(pendingEnabled));
+        localStorage.setItem('chatgpt_exporter_autosave_interval', String(pendingInterval));
+        
+        // 2. Logic to Start/Stop/Update Loop
+        if (!pendingEnabled) {
+            // User requested Disable
+            if (effectiveEnabled) {
+                stopAutoSaveLoop();
+                toast.info('自动保存已暂停');
+            }
         } else {
+            // User requested Enable (or Update if already enabled)
             const h = await getRootHandle();
             if (!h) {
+                // If trying to enable but no handle, ask for one
                 const newHandle = await pickAndSaveRootHandle();
                 if (newHandle) {
                     setRootPath(newHandle.name);
-                    startAutoSaveLoop(intervalMin * 60 * 1000);
-                    setEnabled(true);
+                    // Start (it will initialize if not started)
+                    startAutoSaveLoop(pendingInterval * 60 * 1000);
                     toast.success('自动保存已开启');
+                } else {
+                    // User cancelled folder picker
+                    setPendingEnabled(false);
+                    return; 
                 }
             } else {
-                startAutoSaveLoop(intervalMin * 60 * 1000);
-                setEnabled(true);
-                toast.success('自动保存已开启');
+                // Has handle.
+                // Call startAutoSaveLoop with new interval.
+                // Our unified start function now handles "update if running" logic safely
+                // without releasing the lock (avoiding Standby issue).
+                startAutoSaveLoop(pendingInterval * 60 * 1000);
+                toast.success('设置已保存');
             }
         }
+        
+        setEffectiveEnabled(pendingEnabled);
+        onClose();
     };
 
     const handleDebugChange = (e: any) => {
@@ -55,26 +90,18 @@ export function AutoSaveSettings({ status, onClose }: Props) {
         Logger.setDebug(val);
     };
 
-    const handleIntervalChange = (e: any) => {
-        const val = parseInt(e.target.value, 10);
-        if (val > 0) {
-            setIntervalMin(val);
-            if (enabled) {
-                // Restart with new interval
-                stopAutoSaveLoop();
-                startAutoSaveLoop(val * 60 * 1000);
-            }
-        }
-    };
-
     const changeFolder = async () => {
         const h = await pickAndSaveRootHandle();
         if (h) {
             setRootPath(h.name);
             toast.success('保存目录已更新');
-            // If enabled, it will continue using new handle (as getRootHandle returns it)
+            // Check if we need to auto-start if it was disabled implicitly due to no folder
+            // If user explicitly enabled it elsewhere, it will be handled by handleSaveSettings.
+            // If effective status is running, it keeps running.
         }
     };
+
+    if (loading) return null; // Or spinner
 
     return (
         <div className="cgptx-dialog-overlay" onClick={onClose}>
@@ -90,7 +117,8 @@ export function AutoSaveSettings({ status, onClose }: Props) {
                         <span className={`cgptx-status-badge ${status.state}`}>
                             {status.state === 'idle' ? '空闲' :
                                 status.state === 'checking' ? '检查中...' :
-                                    status.state === 'saving' ? '保存中...' : '错误'}
+                                    status.state === 'saving' ? '保存中...' : 
+                                        status.state === 'disabled' ? '已禁用' : '错误'}
                         </span>
                     </div>
                     {status.message && <div className="cgptx-status-msg">{status.message}</div>}
@@ -104,17 +132,21 @@ export function AutoSaveSettings({ status, onClose }: Props) {
 
                     <div className="cgptx-setting-row">
                         <label>启用自动保存</label>
-                        <input type="checkbox" checked={enabled} onChange={toggleEnabled} />
+                        <input 
+                            type="checkbox" 
+                            checked={pendingEnabled} 
+                            onChange={(e: any) => setPendingEnabled(e.target.checked)} 
+                        />
                     </div>
 
-                    <div className="cgptx-setting-row">
+                    <div className="cgptx-setting-row" style={!pendingEnabled ? { opacity: 0.5 } : {}}>
                         <label>保存间隔 (分钟)</label>
                         <input
                             type="number"
                             min="1"
-                            value={intervalMin}
-                            onChange={handleIntervalChange}
-                            disabled={!enabled}
+                            value={pendingInterval}
+                            onChange={(e: any) => setPendingInterval(parseInt(e.target.value, 10))}
+                            disabled={!pendingEnabled}
                         />
                     </div>
 
@@ -127,17 +159,24 @@ export function AutoSaveSettings({ status, onClose }: Props) {
                     </div>
 
                     <div className="cgptx-setting-row">
-                        <label>调试模式 (控制台日志)</label>
+                        <label>调试模式 (实时生效)</label>
                         <input type="checkbox" checked={debug} onChange={handleDebugChange} />
                     </div>
 
-                    <div className="cgptx-actions">
+                    <div className="cgptx-actions" style={{ justifyContent: 'space-between' }}>
                         <button
-                            className="cgptx-btn-primary"
+                            className="cgptx-btn-secondary"
                             onClick={() => { runAutoSave(); toast.info('已触发立即保存'); }}
                             disabled={status.state !== 'idle' && status.state !== 'error'}
                         >
                             立即运行
+                        </button>
+                        
+                        <button
+                            className="cgptx-btn-primary"
+                            onClick={handleSaveSettings}
+                        >
+                            保存设置
                         </button>
                     </div>
                 </div>
@@ -174,6 +213,7 @@ export function AutoSaveSettings({ status, onClose }: Props) {
                 .cgptx-status-badge.checking { background: #dbeafe; color: #1e40af; }
                 .cgptx-status-badge.saving { background: #dcfce7; color: #166534; }
                 .cgptx-status-badge.error { background: #fee2e2; color: #991b1b; }
+                .cgptx-status-badge.disabled { background: #f3f4f6; color: #9ca3af; border: 1px solid #eee; }
                 .cgptx-status-msg { font-size: 12px; color: #666; margin-bottom: 4px; }
                 .cgptx-status-time { font-size: 12px; color: #999; }
                 .cgptx-folder-display { display: flex; align-items: center; gap: 8px; max-width: 60%; }
@@ -183,12 +223,16 @@ export function AutoSaveSettings({ status, onClose }: Props) {
                 .cgptx-btn-sm {
                     padding: 2px 8px; font-size: 12px; border: 1px solid #ddd; background: #fff; border-radius: 4px; cursor: pointer;
                 }
-                .cgptx-actions { margin-top: 20px; display: flex; justify-content: flex-end; }
+                .cgptx-actions { margin-top: 20px; display: flex; }
                 .cgptx-btn-primary {
                     background: #10a37f; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500;
                 }
-                .cgptx-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+                .cgptx-btn-secondary {
+                    background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 500;
+                }
+                .cgptx-btn-primary:disabled, .cgptx-btn-secondary:disabled { opacity: 0.6; cursor: not-allowed; }
                 input[type="number"] { width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
+                input[type="number"]:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
             `}</style>
         </div>
     );

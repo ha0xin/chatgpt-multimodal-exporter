@@ -23,8 +23,19 @@ export function FloatingEntry() {
 
   useEffect(() => {
     // Auto-start loop if handle exists
+    // Auto-start loop if handle exists and enabled
     getRootHandle().then(async (h) => {
       if (h) {
+         // Check explicit setting
+         const storedEnabled = localStorage.getItem('chatgpt_exporter_autosave_enabled');
+         // Default to true if not set (legacy behavior compatibility)
+         const isEnabled = storedEnabled === null || storedEnabled === 'true';
+
+         if (!isEnabled) {
+             console.log('AutoSave is disabled by user setting.');
+             return;
+         }
+
         // Wait for credentials before starting the loop
         const credReady = await Cred.ensureReady();
         if (credReady) {

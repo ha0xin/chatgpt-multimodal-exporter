@@ -1,7 +1,7 @@
 
 import { signal, computed } from '@preact/signals';
 
-export type AutoSaveState = 'idle' | 'checking' | 'saving' | 'error';
+export type AutoSaveState = 'idle' | 'checking' | 'saving' | 'error' | 'disabled';
 export type AutoSaveRole = 'leader' | 'standby' | 'unknown';
 
 // Internal State Signals
