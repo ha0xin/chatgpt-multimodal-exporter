@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
-import { subscribeStatus, getRootHandle, startAutoSaveLoop, AutoSaveStatus } from '../../autoSave';
+import { useEffect, useRef } from 'preact/hooks';
+import { getRootHandle, startAutoSaveLoop } from '../../autoSave';
 import { Cred } from '../../cred';
 import { useCredentialStatus } from '../hooks/useCredentialStatus';
+import { useAutoSave } from '../hooks/useAutoSave';
 import { StatusPanel } from './StatusPanel';
 import { ExportJsonButton } from './ExportJsonButton';
 import { DownloadFilesButton } from './DownloadFilesButton';
@@ -10,7 +11,8 @@ import { Conversation } from '../../types';
 
 export function FloatingEntry() {
   const { status, refreshCredStatus } = useCredentialStatus();
-  const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>({ lastRun: 0, state: 'idle', message: '' });
+  // Use new hook
+  const autoSaveState = useAutoSave();
 
   // Shared cache for conversation data to optimize fetches between buttons
   const lastConvData = useRef<Conversation | null>(null);
@@ -26,13 +28,14 @@ export function FloatingEntry() {
         // Wait for credentials before starting the loop
         const credReady = await Cred.ensureReady();
         if (credReady) {
-          startAutoSaveLoop();
+            // Note: startAutoSaveLoop is now safe to call multiple times (idempotent init)
+            startAutoSaveLoop();
         } else {
           console.warn('AutoSave not started: User credentials not ready');
         }
       }
     });
-    return subscribeStatus(setAutoSaveStatus);
+    // Removed subscribeStatus, useAutoSave handles it via signals
   }, []);
 
   const isOk = status.hasToken && status.hasAcc;
@@ -50,7 +53,7 @@ export function FloatingEntry() {
           cachedData={lastConvData.current}
           onDataFetched={updateCache}
         />
-        <ActionButtons autoSaveStatus={autoSaveStatus} />
+        <ActionButtons autoSaveState={autoSaveState} />
       </div>
     </div>
   );
