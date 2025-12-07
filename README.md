@@ -1,5 +1,7 @@
 # ChatGPT Multimodal Exporter
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ha0xin/chatgpt-multimodal-exporter)
+
 一个基于 vite-plugin-monkey 的 Tampermonkey / Violentmonkey 用户脚本，用来在 chatgpt.com / chat.openai.com 上导出对话 JSON，并尽可能抓取会话中的多模态资源（附件、图片指针、音频、沙盒文件等），支持单聊导出与批量导出。
 
 ## 功能特点
