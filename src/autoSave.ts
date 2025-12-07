@@ -24,14 +24,25 @@ export interface AutoSaveStatus {
 /**
  * Saves a single conversation to disk.
  * MUST be called within a lock (runExclusiveStateOp).
+ * 
+ * Structure: UserFolder / WorkspaceFolder / CategoryFolder / ConversationID
  */
-async function saveConversationToDisk(userFolder: FileSystemDirectoryHandle, conv: Conversation, parentFolderName: string) {
+async function saveConversationToDisk(
+    userFolder: FileSystemDirectoryHandle, 
+    conv: Conversation, 
+    workspaceName: string,
+    categoryName: string
+) {
     const id = conv.conversation_id;
 
-    // Ensure parent folder (Personal or WorkspaceID inside User folder)
-    const parentFolder = await ensureFolder(userFolder, parentFolderName);
-    // Ensure conversation folder
-    const convFolder = await ensureFolder(parentFolder, id);
+    // 1. Ensure Workspace Folder (Personal or WorkspaceID)
+    const wsFolder = await ensureFolder(userFolder, workspaceName);
+    
+    // 2. Ensure Category Folder (ProjectID or 'conversations')
+    const catFolder = await ensureFolder(wsFolder, categoryName);
+
+    // 3. Ensure Conversation Folder
+    const convFolder = await ensureFolder(catFolder, id);
 
     // 1. Save conversation.json
     await writeFile(convFolder, 'conversation.json', JSON.stringify(conv, null, 2));
@@ -229,14 +240,26 @@ export async function runAutoSaveCycle() {
             autoSaveStore.setStatus('saving', `Saving ${candidates.length} conversations...`);
             Logger.info('AutoSave', `Found ${candidates.length} updates`);
 
+            const REGULAR_FOLDER = 'conversations';
+
             for (let i = 0; i < candidates.length; i++) {
                 const c = candidates[i];
-                const typeStr = c.projectId ? `[Gizmo ${c.projectId}]` : `[${c.folder}]`;
+                // category is project ID or 'conversations'
+                const category = c.projectId || REGULAR_FOLDER;
+                
+                const typeStr = c.projectId ? `[Gizmo ${c.projectId}]` : `[${c.workspaceKey}]`;
                 autoSaveStore.setStatus('saving', `Saving ${i + 1}/${candidates.length}: ${typeStr} ${c.id}`);
-                Logger.info('AutoSave', `Saving ${c.id} to ${c.folder}`);
+                Logger.info('AutoSave', `Saving ${c.id} to ${c.workspaceKey}/${category}`);
 
                 const conv = await fetchConvWithRetry(c.id, c.projectId);
-                await saveConversationToDisk(userFolder, conv, c.folder);
+                
+                // Determine workspace folder name: 'Personal' or the workspace ID
+                let wsFolderName = 'Personal';
+                if (c.workspaceKey && c.workspaceKey !== 'personal') {
+                    wsFolderName = c.workspaceKey;
+                }
+
+                await saveConversationToDisk(userFolder, conv, wsFolderName, category);
 
                 await updateConversationState(
                     userFolder,
