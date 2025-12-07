@@ -135,7 +135,8 @@ export const Cred = (() => {
     // CLIENT_BOOTSTRAP for User Email and Account ID
     try {
       // https://deepwiki.com/search/unsafewindowlet-bs-unsafewindo_7d2850f6-596f-4cad-8791-de7557543ad6?mode=fast
-      let bs = (unsafeWindow as any).CLIENT_BOOTSTRAP;
+      let bs = unsafeWindow.CLIENT_BOOTSTRAP;
+      console.log(bs);
       console.log('[Cred] CLIENT_BOOTSTRAP inspection:', {
         exists: !!bs,
         source: 'unsafeWindow',
