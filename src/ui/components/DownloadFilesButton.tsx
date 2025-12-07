@@ -15,7 +15,7 @@ interface DownloadFilesButtonProps {
 
 export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetched }: DownloadFilesButtonProps) {
     const [busy, setBusy] = useState(false);
-    const [title, setTitle] = useState('下载当前对话中可识别的文件/指针');
+
 
     const handleFilesDownload = async () => {
         const id = convId();
@@ -26,7 +26,6 @@ export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetch
         }
 
         setBusy(true);
-        setTitle('下载文件中…');
 
         try {
             await refreshCredStatus();
@@ -41,23 +40,19 @@ export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetch
             const cands = collectFileCandidates(data);
             if (!cands.length) {
                 toast.info('未找到可下载的文件/指针。');
-                setTitle('未找到文件');
                 setBusy(false);
                 return;
             }
 
             showFilePreviewDialog(cands, async (selected) => {
                 setBusy(true);
-                setTitle(`下载中 (${selected.length})…`);
 
                 try {
                     const res = await downloadSelectedFiles(selected);
-                    setTitle(`完成 ${res.ok}/${res.total}（可再次点击）`);
                     toast.success(`文件下载完成，成功 ${res.ok}/${res.total}`);
                 } catch (e: any) {
                     console.error('[ChatGPT-Multimodal-Exporter] 下载失败：', e);
                     toast.error('下载失败: ' + (e && e.message ? e.message : e));
-                    setTitle('下载失败 ❌');
                 } finally {
                     setBusy(false);
                 }
@@ -67,7 +62,6 @@ export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetch
         } catch (e: any) {
             console.error('[ChatGPT-Multimodal-Exporter] 下载失败：', e);
             toast.error('下载失败: ' + (e && e.message ? e.message : e));
-            setTitle('下载失败 ❌');
             setBusy(false);
         }
     };
@@ -76,7 +70,7 @@ export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetch
         <button
             id="cgptx-mini-btn-files"
             className="cgptx-mini-btn"
-            title={title}
+            title={'下载当前对话的文件'}
             onClick={handleFilesDownload}
             disabled={busy}
         >
