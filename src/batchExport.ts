@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import { zip, strToU8 } from 'fflate';
 
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
@@ -27,6 +27,20 @@ function buildProjectFolderNames(projects: Project[]): Map<string, string> {
   return map;
 }
 
+/**
+ * recursively ensure path exists in the tree
+ */
+function ensureFolder(tree: any, parts: string[]) {
+  let current = tree;
+  for (const part of parts) {
+    if (!current[part]) {
+      current[part] = {};
+    }
+    current = current[part];
+  }
+  return current;
+}
+
 export async function runBatchExport({
   tasks,
   projects,
@@ -45,8 +59,11 @@ export async function runBatchExport({
   cancelRef?: { cancel: boolean };
 }): Promise<Blob> {
   if (!tasks || !tasks.length) throw new Error('任务列表为空');
-  if (typeof JSZip === 'undefined') throw new Error('JSZip 未加载');
-  const zip = new JSZip();
+
+  // We build a tree object for fflate
+  // Structure: { "folder": { "file.txt": [Uint8Array, { mtime }] } }
+  const zipTree: Record<string, any> = {};
+
   const summary: BatchExportSummary = {
     exported_at: new Date().toISOString(),
     total_conversations: tasks.length,
@@ -61,7 +78,6 @@ export async function runBatchExport({
   };
 
   const folderNameByProjectId = buildProjectFolderNames(projects || []);
-  const projCache = new Map<string, JSZip | null>();
 
   const results = await fetchConversationsBatch(tasks, concurrency, progressCb, cancelRef);
   if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
@@ -69,10 +85,16 @@ export async function runBatchExport({
   let idxRoot = 0;
   const projSeq: Record<string, number> = {};
 
+  // For timestamp, we use current time.
+  // zip attributes expect Date. fflate uses local time components from Date object by default.
+  // We use new Date() so files have the export time.
+
+
   for (let i = 0; i < tasks.length; i++) {
     if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
     const t = tasks[i];
     const data = results[i] as Conversation | null;
+    
     if (!data) {
       summary.failed.conversations.push({
         id: t.id,
@@ -81,35 +103,34 @@ export async function runBatchExport({
       });
       continue;
     }
+
+    // Determine folder path
     const isProject = !!t.projectId;
-    let baseFolder: JSZip | null = zip;
-    let seq = '';
+    const folderParts: string[] = [];
 
     if (isProject && t.projectId) {
       const fname = folderNameByProjectId.get(t.projectId) || sanitize(t.projectId || 'project');
-      let cache = projCache.get(t.projectId);
-      if (!cache) {
-        cache = zip.folder(fname);
-        projCache.set(t.projectId, cache);
-      }
-      baseFolder = cache || zip;
+      folderParts.push(fname);
+      
       projSeq[t.projectId] = (projSeq[t.projectId] || 0) + 1;
-      seq = String(projSeq[t.projectId]).padStart(3, '0');
+      const seq = String(projSeq[t.projectId]).padStart(3, '0');
+      
+      const title = sanitize(data?.title || '');
+      const convFolderName = `${seq}_${title || 'chat'}_${t.id}`;
+      folderParts.push(convFolderName);
     } else {
       idxRoot++;
-      seq = String(idxRoot).padStart(3, '0');
+      const seq = String(idxRoot).padStart(3, '0');
+      const title = sanitize(data?.title || '');
+      const convFolderName = `${seq}_${title || 'chat'}_${t.id}`;
+      folderParts.push(convFolderName);
     }
 
-    const title = sanitize(data?.title || '');
-    const convFolderName = `${seq}_${title || 'chat'}_${t.id}`;
-    const convFolder = baseFolder ? baseFolder.folder(convFolderName) : null;
+    // Get the folder object in the tree
+    const convFolder = ensureFolder(zipTree, folderParts);
 
-    if (!convFolder) {
-      // Should not happen
-      continue;
-    }
-
-    convFolder.file('conversation.json', JSON.stringify(data, null, 2));
+    // Add conversation.json
+    convFolder['conversation.json'] = strToU8(JSON.stringify(data, null, 2));
 
     const convMeta: import('./types').ConversationMetadata = {
       id: data.conversation_id || t.id,
@@ -128,7 +149,12 @@ export async function runBatchExport({
       }));
 
       if (candidates.length > 0) {
-        const attFolder = convFolder.folder('attachments');
+        // attachments subfolder
+        if (!convFolder['attachments']) {
+            convFolder['attachments'] = {};
+        }
+        const attFolder = convFolder['attachments'];
+        
         const usedNames = new Set<string>();
         for (const c of candidates) {
           if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
@@ -144,7 +170,10 @@ export async function runBatchExport({
               finalName = `${cnt}_${finalName}`;
             }
             usedNames.add(finalName);
-            if (attFolder) attFolder.file(finalName, res.blob);
+            
+            // Convert Blob to Uint8Array
+            const buf = await res.blob.arrayBuffer();
+            attFolder[finalName] = new Uint8Array(buf);
 
             convMeta.attachments.push({
               pointer: c.pointer || '',
@@ -173,18 +202,25 @@ export async function runBatchExport({
       }
     }
 
-    convFolder.file('metadata.json', JSON.stringify(convMeta, null, 2));
+    // Add metadata.json
+    convFolder['metadata.json'] = strToU8(JSON.stringify(convMeta, null, 2));
 
     if (progressCb) progressCb(80 + Math.round(((i + 1) / tasks.length) * 15), `处理：${i + 1}/${tasks.length}`);
   }
 
-  zip.file('summary.json', JSON.stringify(summary, null, 2));
-  if (progressCb) progressCb(98, '压缩中…');
-  const blob = await zip.generateAsync({
-    type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 7 },
-  });
-  return blob;
-}
+  // Add summary.json to root
+  zipTree['summary.json'] = strToU8(JSON.stringify(summary, null, 2));
 
+  if (progressCb) progressCb(98, '压缩中…');
+
+  // Compress
+  return new Promise<Blob>((resolve, reject) => {
+    zip(zipTree, { level: 6, mem: 8 }, (err, data) => {
+        if (err) {
+            reject(err);
+        } else {
+            resolve(new Blob([data as unknown as BlobPart], { type: 'application/zip' }));
+        }
+    });
+  });
+}

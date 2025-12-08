@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@preact/signals": "^2.5.1",
-    "jszip": "3.9.1",
+    "fflate": "^0.8.2",
     "preact": "^10.28.0",
     "sonner": "^2.0.7"
   },
