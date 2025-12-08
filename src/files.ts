@@ -5,11 +5,12 @@ export function collectFileCandidates(conv: Conversation): FileCandidate[] {
   const mapping = (conv && conv.mapping) || {};
   const out = new Map<string, FileCandidate>();
   const convId = conv?.conversation_id || '';
+  const gizmoId = conv?.gizmo_id || null;
 
   const add = (fileId: string, info: Partial<FileCandidate>) => {
     if (!fileId) return;
     if (out.has(fileId)) return;
-    out.set(fileId, { file_id: fileId, conversation_id: convId, ...info });
+    out.set(fileId, { file_id: fileId, conversation_id: convId, gizmo_id: gizmoId, ...info });
   };
 
   for (const key in mapping) {
@@ -106,6 +107,7 @@ export function extractImages(conv: Conversation): FileCandidate[] {
         images.push({
           kind: 'attachment',
           file_id: fileId,
+          gizmo_id: conv.gizmo_id || null,
           name: att.name || '',
           mime_type: att.mime_type || '',
           size_bytes: att.size || att.size_bytes || undefined,
@@ -130,6 +132,7 @@ export function extractImages(conv: Conversation): FileCandidate[] {
           images.push({
             kind: 'asset_pointer',
             file_id: fileId,
+            gizmo_id: conv.gizmo_id || null,
             pointer,
             width: part.width,
             height: part.height,

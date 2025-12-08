@@ -132,10 +132,17 @@ export async function fetchFileMeta(fileId: string, headers: Headers): Promise<a
 
 export async function fetchDownloadUrlOrResponse(
   fileId: string,
-  headers: Headers
+  headers: Headers,
+  gizmoId?: string | null
 ): Promise<string | Response | null> {
-  const url = `${location.origin}/backend-api/files/download/${fileId}?inline=false`;
-  const resp = await fetchWithRetry(url, { method: 'GET', headers, credentials: 'include' });
+  const url = new URL(`${location.origin}/backend-api/files/download/${fileId}`);
+  url.searchParams.set('inline', 'false');
+  // Only append gizmo_id for Gizmo-owned files (starting with 'file-')
+  // User-uploaded files (starting with 'file_') fail if gizmo_id is present
+  if (gizmoId && fileId.startsWith('file-')) {
+    url.searchParams.set('gizmo_id', gizmoId);
+  }
+  const resp = await fetchWithRetry(url.toString(), { method: 'GET', headers, credentials: 'include' });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
     throw new Error(`download meta ${resp.status}: ${txt.slice(0, 200)}`);

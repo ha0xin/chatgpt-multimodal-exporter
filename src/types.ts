@@ -79,6 +79,7 @@ export interface FileCandidate {
   width?: number;
   height?: number;
   role?: string;
+  gizmo_id?: string | null;
 }
 
 export interface Project {

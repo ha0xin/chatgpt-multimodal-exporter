@@ -41,7 +41,7 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
   const pid = projectId();
   if (pid) headers.set('chatgpt-project-id', pid);
 
-  const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
+  const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers, fileInfo.gizmo_id);
   let resp: Response;
   if (downloadResult instanceof Response) {
     resp = downloadResult;
@@ -122,7 +122,7 @@ export async function downloadPointerOrFileAsBlob(
   const headers = Cred.getAuthHeaders();
   if (projectId) headers.set('chatgpt-project-id', projectId);
 
-  const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers);
+  const downloadResult = await fetchDownloadUrlOrResponse(fileId, headers, fileInfo.gizmo_id);
   let resp: Response;
   if (downloadResult instanceof Response) {
     resp = downloadResult;
