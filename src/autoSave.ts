@@ -1,20 +1,18 @@
-import { listConversationsPage, listGizmosSidebar, listProjectConversations, fetchConvWithRetry } from './conversations';
+import { listConversationsPage, listGizmosSidebar, listProjectConversations, fetchConvWithRetry, scanPagination } from './conversations';
 import { Cred } from './cred';
-import { loadState, updateConversationState, updateWorkspaceCheckTime, updateGizmoCheckTime, saveState } from './autoSaveState';
+import { loadState, updateConversationState, updateWorkspaceCheckTime, updateGizmoCheckTime, saveState } from './autoSaveState'; 
 import { getRootHandle, verifyPermission, ensureFolder, writeFile, fileExists } from './fileSystem';
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
 import { sanitize } from './utils';
 import { Conversation } from './types';
 import { Logger } from './logger';
-import { autoSaveStore } from './state/autoSaveStore';
+import { autoSaveStore, AutoSaveState } from './state/autoSaveStore';
 import { runExclusiveStateOp, tryAcquireLeader } from './mutex';
 
 // Re-export file system helpers for UI
 export { pickAndSaveRootHandle, getRootHandle } from './fileSystem';
 
-// Type re-export for compatibility if needed (though UI should migrate to store)
-import { AutoSaveState } from './state/autoSaveStore';
 export interface AutoSaveStatus {
     lastRun: number;
     state: AutoSaveState;
@@ -110,11 +108,9 @@ async function saveConversationToDisk(
 
 /**
  * Single run of the auto-save logic.
- * NOW wrapped in mutex by caller or inside here?
- * Since this function does IO and State updates, we should wrap the critical part.
- * However, we want the "Check -> Save" to be atomic relative to State to avoid double processing.
+ * @param forceFullScan If true, scans ALL conversations regardless of update time.
  */
-export async function runAutoSaveCycle() {
+export async function runAutoSaveCycle(forceFullScan = false) {
     // If already running (shouldn't happen if serial, but good safety)
     if (autoSaveStore.status.value === 'saving' || autoSaveStore.status.value === 'checking') return;
 
@@ -129,8 +125,9 @@ export async function runAutoSaveCycle() {
         return;
     }
 
-    autoSaveStore.setStatus('checking', 'Checking for updates...');
-    Logger.info('AutoSave', 'Starting auto-save cycle');
+    const modeLabel = forceFullScan ? 'Full Scan' : 'Auto-save';
+    autoSaveStore.setStatus('checking', `${modeLabel}: Checking for updates...`);
+    Logger.info('AutoSave', `Starting ${modeLabel} cycle`);
 
     try {
         // Enforce Mutex for the entire read-check-write cycle
@@ -156,8 +153,6 @@ export async function runAutoSaveCycle() {
             }
 
             const candidates: { id: string; projectId?: string; update_time: string; folder: string, workspaceKey: string }[] = [];
-
-            // 1. Check Personal/Workspace Conversations
             const currentWorkspaceId = Cred.accountId;
 
             // Track check time for this workspace context
@@ -167,31 +162,53 @@ export async function runAutoSaveCycle() {
             }
             await updateWorkspaceCheckTime(userFolder, currentWorkspaceKey);
 
-            const personalPage = await listConversationsPage({ limit: 20, order: 'updated' });
+            // Helper to generate candidate processor
+            const createProcessor = (
+                folderResolver: (item: any) => string, 
+                workspaceKey: string,
+                projectId?: string
+            ) => {
+                return async (items: any[]) => {
+                    let hasNewInPage = false;
+                    for (const item of items) {
+                        const local = state.conversations[item.id];
+                        const remoteTime = item.update_time ? new Date(item.update_time).getTime() : Date.now();
 
-            if (personalPage?.items) {
-                for (const item of personalPage.items) {
-                    const local = state.conversations[item.id];
-                    const remoteTime = new Date(item.update_time).getTime();
+                        // Determine folder name
+                        const folderName = folderResolver(item);
 
-                    // Determine folder name (Project or Personal or WorkspaceID)
-                    let folderName = 'Personal';
-                    if (item.workspace_id) {
-                        folderName = item.workspace_id;
-                    } else if (currentWorkspaceId && currentWorkspaceId !== 'x') {
-                        folderName = currentWorkspaceId;
+                        if (forceFullScan || !local || remoteTime > local.update_time) {
+                            candidates.push({
+                                id: item.id,
+                                projectId: projectId,
+                                update_time: item.update_time,
+                                folder: folderName,
+                                workspaceKey: workspaceKey
+                            });
+                            hasNewInPage = true;
+                        }
                     }
-
-                    if (!local || remoteTime > local.update_time) {
-                        candidates.push({
-                            id: item.id,
-                            update_time: item.update_time,
-                            folder: folderName,
-                            workspaceKey: currentWorkspaceKey
-                        });
+                    
+                    // Stop scanning if NOT full scan and NO new items in this page
+                    // (Assuming chronological order, older items are clean)
+                    if (!forceFullScan && !hasNewInPage) {
+                        return false; 
                     }
-                }
-            }
+                    return true;
+                };
+            };
+
+            // 1. Check Personal/Workspace Conversations
+            // Personal Fetcher wrapper
+            const personalFetcher = (offset: number, limit: number) => listConversationsPage({ offset, limit, order: 'updated' });
+            
+            const personalProcessor = createProcessor((item) => {
+                if (item.workspace_id) return item.workspace_id;
+                if (currentWorkspaceId && currentWorkspaceId !== 'x') return currentWorkspaceId;
+                return 'Personal';
+            }, currentWorkspaceKey);
+
+            await scanPagination(personalFetcher, personalProcessor, 0, 20);
 
             // 2. Check Projects (Gizmos)
             const sidebar = await listGizmosSidebar();
@@ -208,26 +225,12 @@ export async function runAutoSaveCycle() {
             }
 
             for (const pid of projects) {
-                // Update check time
                 await updateGizmoCheckTime(userFolder, currentWorkspaceKey, pid);
 
-                const projPage = await listProjectConversations({ projectId: pid, limit: 10 });
-                if (projPage?.items) {
-                    for (const item of projPage.items) {
-                        const local = state.conversations[item.id];
-                        const remoteTime = item.update_time ? new Date(item.update_time).getTime() : Date.now();
+                const projFetcher = (cursor: number, limit: number) => listProjectConversations({ projectId: pid, cursor, limit });
+                const projProcessor = createProcessor(() => pid, currentWorkspaceKey, pid);
 
-                        if (!local || remoteTime > local.update_time) {
-                            candidates.push({
-                                id: item.id,
-                                projectId: pid,
-                                update_time: item.update_time,
-                                folder: pid,
-                                workspaceKey: currentWorkspaceKey
-                            });
-                        }
-                    }
-                }
+                await scanPagination(projFetcher, projProcessor, 0, 50);
             }
 
             if (candidates.length === 0) {
@@ -284,7 +287,9 @@ export async function runAutoSaveCycle() {
 }
 
 // Legacy alias for UI components
-export const runAutoSave = runAutoSaveCycle;
+export const runAutoSave = () => runAutoSaveCycle(false);
+export const runFullAutoSave = () => runAutoSaveCycle(true);
+
 
 
 // --- Leader Election & Loop ---

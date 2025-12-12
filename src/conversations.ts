@@ -194,6 +194,43 @@ export async function collectAllConversationTasks(
   return { rootIds, roots, projects };
 }
 
+export async function scanPagination(
+  fetcher: (offsetOrCursor: any, limit: number) => Promise<any>,
+  processor: (items: any[]) => Promise<boolean>, // Return false to stop scanning
+  initialCursor: any = 0,
+  limit = 20
+): Promise<void> {
+    let cursor = initialCursor;
+    while (true) {
+        let page;
+        try {
+            page = await fetcher(cursor, limit);
+        } catch (e) {
+            console.warn('Pagination fetch failed', e);
+            break;
+        }
+
+        const items = Array.isArray(page?.items) ? page.items : [];
+        if (items.length === 0) break;
+
+        const shouldContinue = await processor(items);
+        if (!shouldContinue) break;
+
+        if (typeof cursor === 'number') {
+            if (page.total !== undefined && cursor + limit >= page.total) break;
+            cursor += limit;
+        } else {
+            // numeric cursor for projects
+            cursor += limit;
+        }
+
+        // Safety break if page was not full
+        if (items.length < limit) break;
+        
+        await sleep(100);
+    }
+}
+
 export async function fetchConvWithRetry(
   id: string,
   projectId?: string | null,

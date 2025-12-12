@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { AutoSaveStatus, runAutoSave, startAutoSaveLoop, stopAutoSaveLoop, pickAndSaveRootHandle, getRootHandle } from '../../autoSave';
+import { AutoSaveStatus, runAutoSave, runFullAutoSave, startAutoSaveLoop, stopAutoSaveLoop, pickAndSaveRootHandle, getRootHandle } from '../../autoSave';
 import { Logger } from '../../logger';
 import { toast } from 'sonner';
 
@@ -163,14 +163,25 @@ export function AutoSaveSettings({ status, onClose }: Props) {
                         <input type="checkbox" checked={debug} onChange={handleDebugChange} />
                     </div>
 
-                    <div className="cgptx-actions" style={{ justifyContent: 'space-between' }}>
-                        <button
-                            className="cgptx-btn-secondary"
-                            onClick={() => { runAutoSave(); toast.info('已触发立即保存'); }}
-                            disabled={status.state !== 'idle' && status.state !== 'error'}
-                        >
-                            立即运行
-                        </button>
+                    <div className="cgptx-actions" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                className="cgptx-btn-secondary"
+                                onClick={() => { runAutoSave(); toast.info('已触发立即保存'); }}
+                                disabled={status.state !== 'idle' && status.state !== 'error'}
+                                title="Run standard incremental check"
+                            >
+                                立即运行
+                            </button>
+                            <button
+                                className="cgptx-btn-secondary"
+                                onClick={() => { runFullAutoSave(); toast.info('已触发全量扫描'); }}
+                                disabled={status.state !== 'idle' && status.state !== 'error'}
+                                title="Checks ALL conversations (slow)"
+                            >
+                                全部扫描
+                            </button>
+                        </div>
                         
                         <button
                             className="cgptx-btn-primary"
