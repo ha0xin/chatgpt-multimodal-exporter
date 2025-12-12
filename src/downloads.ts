@@ -33,6 +33,11 @@ export async function downloadPointerOrFile(fileInfo: FileCandidate): Promise<vo
     return;
   }
 
+  if (!fileId.startsWith('file-') && !fileId.startsWith('file_')) {
+      console.warn("Invalid file_id, expected to start with 'file-' or 'file_'", fileId);
+      return;
+  }
+
   if (!Cred.token) {
     const ok = await Cred.ensureViaSession();
     if (!ok) throw new Error('没有 accessToken，无法下载文件');
@@ -113,6 +118,11 @@ export async function downloadPointerOrFileAsBlob(
   if (pointer && pointer.startsWith('sandbox:')) {
     if (!convId || !messageId) throw new Error('sandbox pointer 缺少 conversation/message id');
     return downloadSandboxFileBlob({ conversationId: convId, messageId, sandboxPath: pointer });
+  }
+
+  if (!fileId.startsWith('file-') && !fileId.startsWith('file_')) {
+      console.warn("Invalid file_id, expected to start with 'file-' or 'file_'", fileId);
+      throw new Error("Invalid file_id");
   }
 
   if (!Cred.token) {
