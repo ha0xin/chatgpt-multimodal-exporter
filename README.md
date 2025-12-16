@@ -109,3 +109,7 @@ root_directory/
     └── workspace-id-abc/                        # Other workspace
         └── ...
 ```
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ha0xin/chatgpt-multimodal-exporter&type=date&legend=top-left)](https://www.star-history.com/#ha0xin/chatgpt-multimodal-exporter&type=date&legend=top-left)
