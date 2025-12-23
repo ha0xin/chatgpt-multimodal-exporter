@@ -1,6 +1,6 @@
 import { listConversationsPage, listGizmosSidebar, listProjectConversations, fetchConvWithRetry, scanPagination } from './conversations';
 import { Cred } from './cred';
-import { loadState, updateConversationState, updateWorkspaceCheckTime, updateGizmoCheckTime, saveState } from './autoSaveState'; 
+import { loadState, updateConversationState, updateWorkspaceCheckTime, updateGizmoCheckTime, saveState } from './autoSaveState';
 import { getRootHandle, verifyPermission, ensureFolder, writeFile, fileExists } from './fileSystem';
 import { collectFileCandidates } from './files';
 import { downloadPointerOrFileAsBlob } from './downloads';
@@ -9,6 +9,7 @@ import { Conversation } from './types';
 import { Logger } from './logger';
 import { autoSaveStore, AutoSaveState } from './state/autoSaveStore';
 import { runExclusiveStateOp, tryAcquireLeader } from './mutex';
+import { generateHTML } from './htmlGenerator';
 
 // Re-export file system helpers for UI
 export { pickAndSaveRootHandle, getRootHandle } from './fileSystem';
@@ -26,8 +27,8 @@ export interface AutoSaveStatus {
  * Structure: UserFolder / WorkspaceFolder / CategoryFolder / ConversationID
  */
 async function saveConversationToDisk(
-    userFolder: FileSystemDirectoryHandle, 
-    conv: Conversation, 
+    userFolder: FileSystemDirectoryHandle,
+    conv: Conversation,
     workspaceName: string,
     categoryName: string
 ) {
@@ -35,12 +36,13 @@ async function saveConversationToDisk(
 
     // 1. Ensure Workspace Folder (Personal or WorkspaceID)
     const wsFolder = await ensureFolder(userFolder, workspaceName);
-    
+
     // 2. Ensure Category Folder (ProjectID or 'conversations')
     const catFolder = await ensureFolder(wsFolder, categoryName);
 
     // 3. Ensure Conversation Folder
-    const convFolder = await ensureFolder(catFolder, id);
+    const folderName = await resolveConversationFolderName(catFolder, id);
+    const convFolder = await ensureFolder(catFolder, folderName);
 
     // 1. Save conversation.json
     await writeFile(convFolder, 'conversation.json', JSON.stringify(conv, null, 2));
@@ -104,6 +106,33 @@ async function saveConversationToDisk(
     }
 
     await writeFile(convFolder, 'metadata.json', JSON.stringify(meta, null, 2));
+
+    // 4. Save conversation.html
+    try {
+        const htmlContent = generateHTML(conv, meta.attachments);
+        await writeFile(convFolder, 'conversation.html', htmlContent);
+    } catch (e) {
+        Logger.warn('AutoSave', 'Failed to generate HTML', e);
+    }
+}
+
+async function resolveConversationFolderName(
+    catFolder: FileSystemDirectoryHandle,
+    id: string
+): Promise<string> {
+    let fallbackName = '';
+    // Type assertion to access entries() typing across TS lib versions.
+    const entries = (catFolder as FileSystemDirectoryHandle & {
+        entries: () => AsyncIterable<[string, FileSystemHandle]>;
+    }).entries();
+    for await (const [name, handle] of entries) {
+        if (!handle || handle.kind !== 'directory') continue;
+        if (name === id) return name;
+        if (!fallbackName && name.endsWith(`_${id}`)) {
+            fallbackName = name;
+        }
+    }
+    return fallbackName || id;
 }
 
 /**
@@ -132,16 +161,16 @@ export async function runAutoSaveCycle(forceFullScan = false) {
     try {
         // Enforce Mutex for the entire read-check-write cycle
         await runExclusiveStateOp(async () => {
-             // Strict check: User must be identified by email
+            // Strict check: User must be identified by email
             if (!Cred.userLabel) {
                 throw new Error('User email not found (Strict Mode)');
             }
 
             // Ensure User folder (Email)
             const userFolder = await ensureFolder(rootHandle, Cred.userLabel);
-            
+
             // NOTE: loadState is called inside here
-            const state = await loadState(userFolder); 
+            const state = await loadState(userFolder);
 
             // Update User Info in State
             if (state.user.id !== (Cred.accountId || '') || state.user.email !== Cred.userLabel) {
@@ -164,7 +193,7 @@ export async function runAutoSaveCycle(forceFullScan = false) {
 
             // Helper to generate candidate processor
             const createProcessor = (
-                folderResolver: (item: any) => string, 
+                folderResolver: (item: any) => string,
                 workspaceKey: string,
                 projectId?: string
             ) => {
@@ -188,11 +217,11 @@ export async function runAutoSaveCycle(forceFullScan = false) {
                             hasNewInPage = true;
                         }
                     }
-                    
+
                     // Stop scanning if NOT full scan and NO new items in this page
                     // (Assuming chronological order, older items are clean)
                     if (!forceFullScan && !hasNewInPage) {
-                        return false; 
+                        return false;
                     }
                     return true;
                 };
@@ -201,7 +230,7 @@ export async function runAutoSaveCycle(forceFullScan = false) {
             // 1. Check Personal/Workspace Conversations
             // Personal Fetcher wrapper
             const personalFetcher = (offset: number, limit: number) => listConversationsPage({ offset, limit, order: 'updated' });
-            
+
             const personalProcessor = createProcessor((item) => {
                 if (item.workspace_id) return item.workspace_id;
                 if (currentWorkspaceId && currentWorkspaceId !== 'x') return currentWorkspaceId;
@@ -249,13 +278,13 @@ export async function runAutoSaveCycle(forceFullScan = false) {
                 const c = candidates[i];
                 // category is project ID or 'conversations'
                 const category = c.projectId || REGULAR_FOLDER;
-                
+
                 const typeStr = c.projectId ? `[Gizmo ${c.projectId}]` : `[${c.workspaceKey}]`;
                 autoSaveStore.setStatus('saving', `Saving ${i + 1}/${candidates.length}: ${typeStr} ${c.id}`);
                 Logger.info('AutoSave', `Saving ${c.id} to ${c.workspaceKey}/${category}`);
 
                 const conv = await fetchConvWithRetry(c.id, c.projectId);
-                
+
                 // Determine workspace folder name: 'Personal' or the workspace ID
                 let wsFolderName = 'Personal';
                 if (c.workspaceKey && c.workspaceKey !== 'personal') {
@@ -270,7 +299,7 @@ export async function runAutoSaveCycle(forceFullScan = false) {
                     new Date(c.update_time).getTime(),
                     Date.now(),
                     c.workspaceKey,
-                    c.projectId 
+                    c.projectId
                 );
             }
 
@@ -304,12 +333,12 @@ let currentIntervalMs = 5 * 60 * 1000;
 // The loop that Only the Leader runs
 async function leaderLoop() {
     Logger.info('AutoSave', 'I am the Leader. Starting loop.');
-    
+
     while (!stopRequested) {
         // Calculate Next Run
         const nextRun = Date.now() + currentIntervalMs;
         autoSaveStore.setNextRun(nextRun);
-        
+
         // Wait for interval (Interruptible)
         await new Promise<void>(resolve => {
             interruptSleep = resolve;
@@ -332,8 +361,8 @@ export async function startAutoSaveLoop(intervalMs: number = 5 * 60 * 1000) {
         // And optionally wake up the loop to apply it immediately?
         // For now, next cycle will pick it up, or if we want immediate effect:
         if (autoSaveStore.role.value === 'leader' && interruptSleep) {
-             Logger.info('AutoSave', 'Updating interval on running loop');
-             interruptSleep();
+            Logger.info('AutoSave', 'Updating interval on running loop');
+            interruptSleep();
         }
         return;
     }
@@ -342,7 +371,7 @@ export async function startAutoSaveLoop(intervalMs: number = 5 * 60 * 1000) {
     stopRequested = false;
     Logger.info('AutoSave', `Initializing AutoSave system...`);
     autoSaveStore.setStatus('idle', 'Starting...');
-    
+
     // Initial check (Leader election logic)
     attemptLeaderElection();
 }
@@ -358,8 +387,8 @@ async function attemptLeaderElection() {
             try {
                 // Run one immediately upon becoming leader?
                 // Yes, usually good practice.
-                await runAutoSaveCycle(); 
-                
+                await runAutoSaveCycle();
+
                 await leaderLoop();
             } finally {
                 // We lost leadership or loop stopped
@@ -371,8 +400,8 @@ async function attemptLeaderElection() {
             // We are Standby
             autoSaveStore.setRole('standby');
             autoSaveStore.setStatus('idle', 'Standby: Another tab is auto-saving');
-            autoSaveStore.setNextRun(0); 
-            
+            autoSaveStore.setNextRun(0);
+
             // Wait and retry
             // If tryAcquireLeader used {ifAvailable: true}, it returns immediately.
             // We poll every 10 seconds to see if leader died.
@@ -381,7 +410,7 @@ async function attemptLeaderElection() {
             // If we returned from acquired=true, it means we LOST leadership (loop finished or error)
             // We should retry becoming leader immediately or after delay
             if (!stopRequested) {
-                 setTimeout(() => attemptLeaderElection(), 1000);
+                setTimeout(() => attemptLeaderElection(), 1000);
             }
         }
     } catch (e) {
@@ -394,7 +423,7 @@ async function attemptLeaderElection() {
 export function stopAutoSaveLoop() {
     stopRequested = true;
     isStarted = false;
-    
+
     // Wake up leader loop if sleeping
     if (interruptSleep) {
         interruptSleep();
