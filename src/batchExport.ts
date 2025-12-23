@@ -5,6 +5,7 @@ import { downloadPointerOrFileAsBlob } from './downloads';
 import { fetchConversationsBatch } from './conversations';
 import { sanitize, BATCH_CONCURRENCY } from './utils';
 import { Task, Project, BatchExportSummary, Conversation } from './types';
+import { generateHTML } from './htmlGenerator';
 
 function buildProjectFolderNames(projects: Project[]): Map<string, string> {
   const map = new Map<string, string>();
@@ -94,7 +95,7 @@ export async function runBatchExport({
     if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
     const t = tasks[i];
     const data = results[i] as Conversation | null;
-    
+
     if (!data) {
       summary.failed.conversations.push({
         id: t.id,
@@ -111,10 +112,10 @@ export async function runBatchExport({
     if (isProject && t.projectId) {
       const fname = folderNameByProjectId.get(t.projectId) || sanitize(t.projectId || 'project');
       folderParts.push(fname);
-      
+
       projSeq[t.projectId] = (projSeq[t.projectId] || 0) + 1;
       const seq = String(projSeq[t.projectId]).padStart(3, '0');
-      
+
       const title = sanitize(data?.title || '');
       const convFolderName = `${seq}_${title || 'chat'}_${t.id}`;
       folderParts.push(convFolderName);
@@ -151,10 +152,10 @@ export async function runBatchExport({
       if (candidates.length > 0) {
         // attachments subfolder
         if (!convFolder['attachments']) {
-            convFolder['attachments'] = {};
+          convFolder['attachments'] = {};
         }
         const attFolder = convFolder['attachments'];
-        
+
         const usedNames = new Set<string>();
         for (const c of candidates) {
           if (cancelRef && cancelRef.cancel) throw new Error('用户已取消');
@@ -170,7 +171,7 @@ export async function runBatchExport({
               finalName = `${cnt}_${finalName}`;
             }
             usedNames.add(finalName);
-            
+
             // Convert Blob to Uint8Array
             const buf = await res.blob.arrayBuffer();
             attFolder[finalName] = new Uint8Array(buf);
@@ -205,6 +206,14 @@ export async function runBatchExport({
     // Add metadata.json
     convFolder['metadata.json'] = strToU8(JSON.stringify(convMeta, null, 2));
 
+    // Add conversation.html
+    try {
+      const htmlContent = generateHTML(data, convMeta.attachments);
+      convFolder['conversation.html'] = strToU8(htmlContent);
+    } catch (e) {
+      console.warn('Failed to generate HTML for', t.id, e);
+    }
+
     if (progressCb) progressCb(80 + Math.round(((i + 1) / tasks.length) * 15), `处理：${i + 1}/${tasks.length}`);
   }
 
@@ -216,11 +225,11 @@ export async function runBatchExport({
   // Compress
   return new Promise<Blob>((resolve, reject) => {
     zip(zipTree, { level: 6, mem: 8 }, (err, data) => {
-        if (err) {
-            reject(err);
-        } else {
-            resolve(new Blob([data as unknown as BlobPart], { type: 'application/zip' }));
-        }
+      if (err) {
+        reject(err);
+      } else {
+        resolve(new Blob([data as unknown as BlobPart], { type: 'application/zip' }));
+      }
     });
   });
 }
