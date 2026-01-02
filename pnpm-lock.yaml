@@ -11,9 +11,15 @@ importers:
       '@preact/signals':
         specifier: ^2.5.1
         version: 2.5.1(preact@10.28.0)
+      '@types/marked':
+        specifier: ^6.0.0
+        version: 6.0.0
       fflate:
         specifier: ^0.8.2
         version: 0.8.2
+      marked:
+        specifier: ^15.0.12
+        version: 15.0.12
       preact:
         specifier: ^10.28.0
         version: 10.28.0
@@ -455,6 +461,10 @@ packages:
   '@types/greasemonkey@4.0.7':
     resolution: {integrity: sha512-DuYBRf/T4zixO/xhQ3eicZCBjjOgbSSXuHP5XkLNf/UBayrJpBniP9il/AQaPy0lffl4Bco48zgHL+pZmQ6Q0A==}
 
+  '@types/marked@6.0.0':
+    resolution: {integrity: sha512-jmjpa4BwUsmhxcfsgUit/7A9KbrC48Q0q8KvnY107ogcjGgTFDlIL3RpihNpx2Mu1hM4mdFQjoVc4O6JoGKHsA==}
+    deprecated: This is a stub types definition. marked provides its own type definitions, so you do not need this installed.
+
   acorn-walk@8.3.4:
     resolution: {integrity: sha512-ueEepnujpqee2o5aIYnvHU6C0A42MNdsIDeqy5BydrkuC5R1ZuUFnm27EeFJGoEHJQgn3uleRvmTXaJgfXbt4g==}
     engines: {node: '>=0.4.0'}
@@ -644,6 +654,11 @@ packages:
   make-dir@3.1.0:
     resolution: {integrity: sha512-g3FeP20LNwhALb/6Cz6Dd4F2ngze0jz7tbzrD2wAV+o9FeNHe4rL+yK2md0J/fiSf1sa1ADhXqi5+oVwOM/eGw==}
     engines: {node: '>=8'}
+
+  marked@15.0.12:
+    resolution: {integrity: sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==}
+    engines: {node: '>= 18'}
+    hasBin: true
 
   mime@2.5.2:
     resolution: {integrity: sha512-tqkh47FzKeCPD2PUiPB6pkbMzsCasjxAfC62/Wap5qrUWcb+sFasXUC5I3gYM5iBM8v/Qpn4UK0x+j0iHyFPDg==}
@@ -1192,6 +1207,10 @@ snapshots:
 
   '@types/greasemonkey@4.0.7': {}
 
+  '@types/marked@6.0.0':
+    dependencies:
+      marked: 15.0.12
+
   acorn-walk@8.3.4:
     dependencies:
       acorn: 8.15.0
@@ -1372,6 +1391,8 @@ snapshots:
   make-dir@3.1.0:
     dependencies:
       semver: 6.3.1
+
+  marked@15.0.12: {}
 
   mime@2.5.2: {}
 

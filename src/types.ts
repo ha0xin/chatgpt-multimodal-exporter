@@ -39,10 +39,14 @@ export interface Message {
   recipient: string;
 }
 
+export type ThoughtItem = string | { text?: string; content?: string };
+
 export interface MessageContent {
   content_type: string;
   parts?: any[];
   text?: string; // Legacy or simple text
+  content?: string; // reasoning recap payloads
+  thoughts?: ThoughtItem[] | string; // reasoning payloads
 }
 
 export interface MessageMetadata {

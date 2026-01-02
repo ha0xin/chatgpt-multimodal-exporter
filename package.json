@@ -6,6 +6,9 @@
   "author": "ha0xin",
   "license": "MIT",
   "description": "导出 ChatGPT 对话 json + 会话中的多模态文件（图片、音频、sandbox 文件等）",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -13,7 +16,9 @@
   },
   "dependencies": {
     "@preact/signals": "^2.5.1",
+    "@types/marked": "^6.0.0",
     "fflate": "^0.8.2",
+    "marked": "^15.0.12",
     "preact": "^10.28.0",
     "sonner": "^2.0.7"
   },
