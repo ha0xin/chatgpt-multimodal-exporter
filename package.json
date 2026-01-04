@@ -1,7 +1,7 @@
 {
   "name": "chatgpt-multimodal-exporter",
   "private": true,
-  "version": "0.7.2",
+  "version": "0.8.0-alpha.0",
   "type": "module",
   "author": "ha0xin",
   "license": "MIT",
