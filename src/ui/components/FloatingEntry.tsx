@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { getRootHandle, startAutoSaveLoop } from '../../autoSave';
 import { Cred } from '../../cred';
 import { useCredentialStatus } from '../hooks/useCredentialStatus';
@@ -14,11 +14,12 @@ export function FloatingEntry() {
   // Use new hook
   const autoSaveState = useAutoSave();
 
-  // Shared cache for conversation data to optimize fetches between buttons
-  const lastConvData = useRef<Conversation | null>(null);
+  // Shared cache for conversation data to optimize fetches between buttons.
+  // Use state so updates are reactive and sibling buttons receive fresh data.
+  const [lastConvData, setLastConvData] = useState<Conversation | null>(null);
 
   const updateCache = (data: Conversation) => {
-    lastConvData.current = data;
+    setLastConvData(data);
   };
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export function FloatingEntry() {
         />
         <DownloadFilesButton
           refreshCredStatus={refreshCredStatus}
-          cachedData={lastConvData.current}
+          cachedData={lastConvData}
           onDataFetched={updateCache}
         />
         <ActionButtons autoSaveState={autoSaveState} />
