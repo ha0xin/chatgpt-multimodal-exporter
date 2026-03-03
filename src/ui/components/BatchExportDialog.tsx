@@ -6,6 +6,15 @@ import { runBatchExport } from '../../batchExport';
 import { Project, Task } from '../../types';
 import { Checkbox } from './Checkbox';
 import { toast } from 'sonner';
+import {
+    CHATGPT_MODAL_BOX_CLASS,
+    CHATGPT_MODAL_GRID_CLASS,
+    CHATGPT_MODAL_HEADER_CLASS,
+    CHATGPT_MODAL_OVERLAY_CLASS,
+    CHATGPT_MODAL_TITLE_CLASS,
+    CHATGPT_PANEL_CLASS,
+    CHATGPT_SECONDARY_BUTTON_CLASS,
+} from './chatgptUiClasses';
 
 interface BatchExportDialogProps {
     onClose: () => void;
@@ -207,102 +216,106 @@ export function BatchExportDialog({ onClose }: BatchExportDialogProps) {
     };
 
     return (
-        <div className="cgptx-modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div className="cgptx-modal-box">
-                <div className="cgptx-modal-header">
-                    <div className="cgptx-modal-title">批量导出对话（JSON + 附件）</div>
-                    <div className="cgptx-modal-actions">
-                        <button className="cgptx-btn" onClick={toggleAll} disabled={exporting.value || loading.value}>全选/反选</button>
-                        <button className="cgptx-btn primary" onClick={startExport} disabled={exporting.value || loading.value}>开始导出</button>
-                        <button className="cgptx-btn" onClick={handleStop} disabled={!exporting.value}>停止</button>
-                        <button className="cgptx-btn" onClick={onClose}>关闭</button>
-                    </div>
-                </div>
-
-                <div className="cgptx-chip">{statusText.value}</div>
-
-                <div className="cgptx-modal-actions" style={{ justifyContent: 'flex-start', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                    <Checkbox
-                        checked={includeAttachments.value}
-                        onChange={(checked) => includeAttachments.value = checked}
-                        disabled={exporting.value}
-                        label="包含附件（ZIP）"
-                    />
-                </div>
-
-                <div className="cgptx-list" style={{ maxHeight: '46vh', overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: '10px' }}>
-                    {loading.value && (
-                        <div className="cgptx-item" style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
-                            {progress.value ? (
-                                <div style={{ width: '100%', textAlign: 'center' }}>
-                                    <div>{progress.value.text} ({Math.round(progress.value.pct)}%)</div>
-                                    <div className="cgptx-progress-track" style={{ marginTop: '10px' }}>
-                                        <div className="cgptx-progress-bar" style={{ width: `${progress.value.pct}%` }}></div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div>加载中...</div>
-                            )}
+        <div className={CHATGPT_MODAL_OVERLAY_CLASS} onClick={(e) => e.target === e.currentTarget && onClose()}>
+            <div className={CHATGPT_MODAL_GRID_CLASS}>
+                <div className={CHATGPT_MODAL_BOX_CLASS}>
+                    <div className={CHATGPT_MODAL_HEADER_CLASS}>
+                        <div className={CHATGPT_MODAL_TITLE_CLASS}>批量导出对话（JSON + 附件）</div>
+                        <div className="cgptx-modal-actions">
+                            <button className={CHATGPT_SECONDARY_BUTTON_CLASS} onClick={toggleAll} disabled={exporting.value || loading.value}>全选/反选</button>
+                            <button className={CHATGPT_SECONDARY_BUTTON_CLASS} onClick={startExport} disabled={exporting.value || loading.value}>开始导出</button>
+                            <button className={CHATGPT_SECONDARY_BUTTON_CLASS} onClick={handleStop} disabled={!exporting.value}>停止</button>
+                            <button className={CHATGPT_SECONDARY_BUTTON_CLASS} onClick={onClose}>关闭</button>
                         </div>
-                    )}
-                    {error.value && <div className="cgptx-item" style={{ color: 'red' }}>{error.value}</div>}
+                    </div>
 
-                    {!loading.value && !error.value && groups.value.map((group, gIdx) => {
-                        const groupKeys = group.items.map(it => makeKey(group.projectId, it.id));
-                        const checkedCount = groupKeys.filter(k => selectedSet.value.has(k)).length;
-                        const isAll = checkedCount === groupKeys.length && groupKeys.length > 0;
-                        const isIndeterminate = checkedCount > 0 && checkedCount < groupKeys.length;
+                    <div className={`${CHATGPT_PANEL_CLASS} cgptx-modal-panel`}>
+                        <div className="cgptx-chip">{statusText.value}</div>
 
-                        return (
-                            <div className="cgptx-group" key={gIdx}>
-                                <div className="cgptx-group-header">
-                                    <Checkbox
-                                        checked={isAll}
-                                        indeterminate={isIndeterminate}
-                                        onChange={(checked) => toggleGroupSelect(group, checked)}
-                                    />
-                                    <span
-                                        className="cgptx-arrow"
-                                        onClick={() => toggleGroupCollapse(gIdx)}
-                                    >
-                                        {group.collapsed ? '▶' : '▼'}
-                                    </span>
-                                    <div className="group-title" onClick={() => toggleGroupCollapse(gIdx)}>{group.label}</div>
-                                    <div className="group-count">{group.items.length} 条</div>
-                                </div>
+                        <div className="cgptx-modal-actions cgptx-modal-inline-actions">
+                            <Checkbox
+                                checked={includeAttachments.value}
+                                onChange={(checked) => includeAttachments.value = checked}
+                                disabled={exporting.value}
+                                label="包含附件（ZIP）"
+                            />
+                        </div>
 
-                                <div className="cgptx-group-list" style={{ display: group.collapsed ? 'none' : 'block' }}>
-                                    {group.items.map(item => {
-                                        const key = makeKey(group.projectId, item.id);
-                                        return (
-                                            <div className="cgptx-item" key={key}>
-                                                <Checkbox
-                                                    checked={selectedSet.value.has(key)}
-                                                    onChange={() => toggleItemSelect(key)}
-                                                />
-                                                <div></div>
-                                                <div>
-                                                    <div className="title">{item.title || item.id}</div>
-                                                </div>
+                        <div className="cgptx-list cgptx-list-dialog">
+                            {loading.value && (
+                                <div className="cgptx-item cgptx-item-loading">
+                                    {progress.value ? (
+                                        <div className="cgptx-loading-wrap">
+                                            <div>{progress.value.text} ({Math.round(progress.value.pct)}%)</div>
+                                            <div className="cgptx-progress-track">
+                                                <div className="cgptx-progress-bar" style={{ width: `${progress.value.pct}%` }}></div>
                                             </div>
-                                        );
-                                    })}
+                                        </div>
+                                    ) : (
+                                        <div>加载中...</div>
+                                    )}
+                                </div>
+                            )}
+                            {error.value && <div className="cgptx-item cgptx-item-error">{error.value}</div>}
+
+                            {!loading.value && !error.value && groups.value.map((group, gIdx) => {
+                                const groupKeys = group.items.map(it => makeKey(group.projectId, it.id));
+                                const checkedCount = groupKeys.filter(k => selectedSet.value.has(k)).length;
+                                const isAll = checkedCount === groupKeys.length && groupKeys.length > 0;
+                                const isIndeterminate = checkedCount > 0 && checkedCount < groupKeys.length;
+
+                                return (
+                                    <div className="cgptx-group" key={gIdx}>
+                                        <div className="cgptx-group-header">
+                                            <Checkbox
+                                                checked={isAll}
+                                                indeterminate={isIndeterminate}
+                                                onChange={(checked) => toggleGroupSelect(group, checked)}
+                                            />
+                                            <span
+                                                className="cgptx-arrow"
+                                                onClick={() => toggleGroupCollapse(gIdx)}
+                                            >
+                                                {group.collapsed ? '▶' : '▼'}
+                                            </span>
+                                            <div className="group-title" onClick={() => toggleGroupCollapse(gIdx)}>{group.label}</div>
+                                            <div className="group-count">{group.items.length} 条</div>
+                                        </div>
+
+                                        <div className="cgptx-group-list" style={{ display: group.collapsed ? 'none' : 'block' }}>
+                                            {group.items.map(item => {
+                                                const key = makeKey(group.projectId, item.id);
+                                                return (
+                                                    <div className="cgptx-item" key={key}>
+                                                        <Checkbox
+                                                            checked={selectedSet.value.has(key)}
+                                                            onChange={() => toggleItemSelect(key)}
+                                                        />
+                                                        <div></div>
+                                                        <div>
+                                                            <div className="title">{item.title || item.id}</div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {!loading.value && progress.value && (
+                            <div className="cgptx-progress-wrap">
+                                <div className="cgptx-progress-track">
+                                    <div className="cgptx-progress-bar" style={{ width: `${progress.value.pct}%` }}></div>
+                                </div>
+                                <div className="cgptx-progress-text">
+                                    {progress.value.text} ({Math.round(progress.value.pct)}%)
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
-
-                {!loading.value && progress.value && (
-                    <div className="cgptx-progress-wrap" style={{ display: 'flex' }}>
-                        <div className="cgptx-progress-track">
-                            <div className="cgptx-progress-bar" style={{ width: `${progress.value.pct}%` }}></div>
-                        </div>
-                        <div className="cgptx-progress-text">
-                            {progress.value.text} ({Math.round(progress.value.pct)}%)
-                        </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );

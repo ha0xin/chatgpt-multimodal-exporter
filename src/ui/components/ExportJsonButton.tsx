@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { convId, projectId, sanitize, saveJSON } from '../../utils';
 import { Cred } from '../../cred';
 import { fetchConversation } from '../../api';
+import { CHATGPT_ICON_BUTTON_CLASS } from './chatgptUiClasses';
 
 interface ExportJsonButtonProps {
     refreshCredStatus: () => Promise<void>;
@@ -44,7 +45,7 @@ export function ExportJsonButton({ refreshCredStatus, onDataFetched }: ExportJso
     return (
         <button
             id="cgptx-mini-btn"
-            className="cgptx-mini-btn"
+            className={CHATGPT_ICON_BUTTON_CLASS}
             title="导出 JSON"
             aria-label="导出 JSON"
             onClick={handleJsonExport}

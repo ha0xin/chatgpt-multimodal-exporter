@@ -3,6 +3,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { AutoSaveSettings } from '../components/AutoSaveSettings';
 import { AutoSaveUIState } from '../hooks/useAutoSave';
 import { showBatchExportDialog } from '../dialogs/BatchExportDialog';
+import { CHATGPT_ICON_BUTTON_CLASS } from './chatgptUiClasses';
 
 interface ActionButtonsProps {
     autoSaveState: AutoSaveUIState;
@@ -75,7 +76,7 @@ export function ActionButtons({ autoSaveState }: ActionButtonsProps) {
                 </svg>
                 {/* X Overlay */}
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" 
-                     style={{ position: 'absolute', bottom: -2, right: -2, color: '#ef4444', background: 'white', borderRadius: '50%' }}>
+                     style={{ position: 'absolute', bottom: -2, right: -2, color: '#ef4444', background: 'var(--main-surface-primary, #fff)', borderRadius: '50%' }}>
                      <line x1="18" y1="6" x2="6" y2="18"></line>
                      <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
@@ -149,7 +150,7 @@ export function ActionButtons({ autoSaveState }: ActionButtonsProps) {
             )}
             <button
                 id="cgptx-mini-btn-batch"
-                className="cgptx-mini-btn"
+                className={CHATGPT_ICON_BUTTON_CLASS}
                 title="批量导出"
                 aria-label="批量导出"
                 onClick={handleBatchExport}
@@ -162,7 +163,7 @@ export function ActionButtons({ autoSaveState }: ActionButtonsProps) {
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <button
                     id="cgptx-mini-btn-autosave"
-                    className="cgptx-mini-btn"
+                    className={CHATGPT_ICON_BUTTON_CLASS}
                     title={tooltip}
                     aria-label="自动保存设置"
                     onClick={handleAutoSaveClick}

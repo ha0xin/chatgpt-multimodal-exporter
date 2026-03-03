@@ -6,6 +6,7 @@ import { fetchConversation } from '../../api';
 import { collectFileCandidates } from '../../files';
 import { downloadSelectedFiles } from '../../downloads';
 import { showFilePreviewDialog } from '../dialogs/FilePreviewDialog';
+import { CHATGPT_ICON_BUTTON_CLASS } from './chatgptUiClasses';
 
 interface DownloadFilesButtonProps {
     refreshCredStatus: () => Promise<void>;
@@ -69,7 +70,7 @@ export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetch
     return (
         <button
             id="cgptx-mini-btn-files"
-            className="cgptx-mini-btn"
+            className={CHATGPT_ICON_BUTTON_CLASS}
             title={'下载当前对话的文件'}
             aria-label="下载当前对话的文件"
             onClick={handleFilesDownload}
