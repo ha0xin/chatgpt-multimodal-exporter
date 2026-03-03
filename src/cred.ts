@@ -135,14 +135,16 @@ export const Cred = (() => {
     // CLIENT_BOOTSTRAP for User Email and Account ID
     try {
       // https://deepwiki.com/search/unsafewindowlet-bs-unsafewindo_7d2850f6-596f-4cad-8791-de7557543ad6?mode=fast
-      let bs = unsafeWindow.CLIENT_BOOTSTRAP;
-      console.log(bs);
-      console.log('[Cred] CLIENT_BOOTSTRAP inspection:', {
+      const bs = unsafeWindow.CLIENT_BOOTSTRAP;
+      if (Logger.isDebug()) {
+        console.log('[Cred] CLIENT_BOOTSTRAP raw:', bs);
+      }
+      Logger.debug('Cred', 'CLIENT_BOOTSTRAP inspection:', {
         exists: !!bs,
         source: 'unsafeWindow',
         hasUser: !!bs?.user,
         email: bs?.user?.email,
-        session: !!bs?.session
+        session: !!bs?.session,
       });
 
       if (bs) {

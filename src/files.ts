@@ -48,17 +48,6 @@ export function collectFileCandidates(conv: Conversation): FileCandidate[] {
           const fid = pointerToFileId(part.asset_pointer);
           add(fid, { source: part.content_type, pointer: part.asset_pointer, meta: part, message_id: msg.id });
         }
-        if (
-          part &&
-          typeof part === 'object' &&
-          part.content_type === 'real_time_user_audio_video_asset_pointer' &&
-          part.audio_asset_pointer &&
-          part.audio_asset_pointer.asset_pointer
-        ) {
-          const ap = part.audio_asset_pointer;
-          const fid = pointerToFileId(ap.asset_pointer);
-          add(fid, { source: 'voice-audio', pointer: ap.asset_pointer, meta: ap, message_id: msg.id });
-        }
         if (part && typeof part === 'object' && part.audio_asset_pointer && part.audio_asset_pointer.asset_pointer) {
           const ap = part.audio_asset_pointer;
           const fid = pointerToFileId(ap.asset_pointer);
@@ -149,4 +138,3 @@ export function extractImages(conv: Conversation): FileCandidate[] {
   console.log('[ChatGPT-Multimodal-Exporter] 找到的图片信息：', images);
   return images;
 }
-

@@ -1,67 +1,116 @@
 .cgptx-mini-wrap {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2147483647;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  position: relative;
+  height: 36px;
+  gap: 6px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0;
+}
+.cgptx-status-anchor {
+  position: relative;
+}
+#cgptx-sidebar-root[data-mode="expanded"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+}
+#cgptx-sidebar-root[data-mode="expanded"] .cgptx-mini-wrap {
+  width: 100%;
+  gap: 0;
+}
+#cgptx-sidebar-root[data-mode="collapsed"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#cgptx-sidebar-root[data-mode="collapsed"] .cgptx-mini-wrap {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  gap: 0;
+}
+#cgptx-sidebar-root[data-mode="collapsed"] .cgptx-mini-badges-col {
+  left: auto;
+  right: 4px;
+  top: 2px;
 }
 .cgptx-mini-badge {
   font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #374151;
-  border: 1px solid #e5e7eb;
-  max-width: 260px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: 50%;
+  text-indent: -9999px;
+  border: 1px solid transparent;
   overflow: hidden;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  box-shadow: none;
+  cursor: help;
 }
 .cgptx-mini-badge.ok {
-  background: #ecfdf5;
+  background: #3fd991;
   border-color: #a7f3d0;
   color: #047857;
 }
 .cgptx-mini-badge.bad {
-  background: #fef2f2;
+  background: #d43939;
   border-color: #fecaca;
   color: #b91c1c;
 }
 .cgptx-mini-btn-row {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  height: 36px;
+  gap: 2px;
+}
+#cgptx-sidebar-root[data-mode="expanded"] .cgptx-mini-btn-row {
+  --cgptx-slot-gap: clamp(2px, calc((100% - 144px) / 5), 12px);
+  width: 100%;
+  justify-content: space-between;
+  gap: 0;
+  padding-inline: var(--cgptx-slot-gap);
 }
 .cgptx-mini-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1px solid #e5e7eb;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  padding: 0;
   cursor: pointer;
-  background: #ffffff;
-  color: #4b5563;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: transparent;
+  color: #8f8f8f;
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  transition: all .2s ease;
+  font-size: 16px;
+  line-height: 1;
+  transition: background-color .15s ease, color .15s ease;
 }
 .cgptx-mini-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
-  color: #2563eb;
-  border-color: #bfdbfe;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8e8;
+  transform: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+.cgptx-mini-btn:focus-visible {
+  outline: 2px solid #6ea8fe;
+  outline-offset: -2px;
 }
 .cgptx-mini-btn:disabled {
   opacity: .6;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+html.light .cgptx-mini-btn {
+  color: #6b7280;
+}
+html.light .cgptx-mini-btn:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: #111827;
 }
 .cgptx-modal {
   position: fixed;
@@ -350,11 +399,19 @@
 }
 /* StatusPanel Styles */
 .cgptx-mini-badges-col {
-  display: flex; 
-  flex-direction: column; 
-  gap: 4px; 
-  margin-bottom: 8px; 
-  align-items: flex-end;
+  position: absolute;
+  top: 2px;
+  left: -17px;
+  right: auto;
+  z-index: 2;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  gap: 0;
+  margin-bottom: 0;
 }
 
 .cgptx-mini-badge.info {
