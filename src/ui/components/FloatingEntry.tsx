@@ -9,7 +9,11 @@ import { DownloadFilesButton } from './DownloadFilesButton';
 import { ActionButtons } from './ActionButtons';
 import { Conversation } from '../../types';
 
-export function FloatingEntry() {
+interface FloatingEntryProps {
+  collapsed?: boolean;
+}
+
+export function FloatingEntry({ collapsed = false }: FloatingEntryProps) {
   const { status, refreshCredStatus } = useCredentialStatus();
   // Use new hook
   const autoSaveState = useAutoSave();
@@ -53,20 +57,22 @@ export function FloatingEntry() {
   const isOk = status.hasToken && status.hasAcc;
 
   return (
-    <div className="cgptx-mini-wrap">
+    <div className={`cgptx-mini-wrap${collapsed ? ' cgptx-mini-wrap-collapsed' : ''}`}>
       <StatusPanel status={status} isOk={isOk} />
-      <div className="cgptx-mini-btn-row">
-        <ExportJsonButton
-          refreshCredStatus={refreshCredStatus}
-          onDataFetched={updateCache}
-        />
-        <DownloadFilesButton
-          refreshCredStatus={refreshCredStatus}
-          cachedData={lastConvData}
-          onDataFetched={updateCache}
-        />
-        <ActionButtons autoSaveState={autoSaveState} />
-      </div>
+      {!collapsed && (
+        <div className="cgptx-mini-btn-row">
+          <ExportJsonButton
+            refreshCredStatus={refreshCredStatus}
+            onDataFetched={updateCache}
+          />
+          <DownloadFilesButton
+            refreshCredStatus={refreshCredStatus}
+            cachedData={lastConvData}
+            onDataFetched={updateCache}
+          />
+          <ActionButtons autoSaveState={autoSaveState} />
+        </div>
+      )}
     </div>
   );
 }

@@ -71,6 +71,7 @@ export function DownloadFilesButton({ refreshCredStatus, cachedData, onDataFetch
             id="cgptx-mini-btn-files"
             className="cgptx-mini-btn"
             title={'下载当前对话的文件'}
+            aria-label="下载当前对话的文件"
             onClick={handleFilesDownload}
             disabled={busy}
         >

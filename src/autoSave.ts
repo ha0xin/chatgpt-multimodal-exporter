@@ -354,14 +354,15 @@ async function leaderLoop() {
 
 // Global start function
 export async function startAutoSaveLoop(intervalMs: number = 5 * 60 * 1000) {
+    const previousIntervalMs = currentIntervalMs;
     currentIntervalMs = intervalMs;
 
     if (isStarted) {
-        // If already started, just ensure the interval is updated (which we did above)
-        // And optionally wake up the loop to apply it immediately?
-        // For now, next cycle will pick it up, or if we want immediate effect:
-        if (autoSaveStore.role.value === 'leader' && interruptSleep) {
-            Logger.info('AutoSave', 'Updating interval on running loop');
+        // Avoid waking the loop on repeated init calls from UI remounts.
+        // Only interrupt sleep when the interval is actually changed.
+        const intervalChanged = previousIntervalMs !== intervalMs;
+        if (intervalChanged && autoSaveStore.role.value === 'leader' && interruptSleep) {
+            Logger.info('AutoSave', `Updating interval from ${previousIntervalMs}ms to ${intervalMs}ms`);
             interruptSleep();
         }
         return;

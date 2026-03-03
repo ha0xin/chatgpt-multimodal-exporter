@@ -46,6 +46,7 @@ export function ExportJsonButton({ refreshCredStatus, onDataFetched }: ExportJso
             id="cgptx-mini-btn"
             className="cgptx-mini-btn"
             title="导出 JSON"
+            aria-label="导出 JSON"
             onClick={handleJsonExport}
             disabled={busy}
         >

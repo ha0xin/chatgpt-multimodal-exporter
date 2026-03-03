@@ -1,23 +1,48 @@
 .cgptx-mini-wrap {
-  /* position: fixed; */
-  /* right: 16px; */
-  /* bottom: 16px; */
-  /* z-index: 2147483647; */
   display: flex;
-  flex-direction: row; /* Horizontal layout for sidebar */
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
+  position: relative;
+  height: 36px;
+  gap: 6px;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  margin-left: auto; /* Push to the right, next to collapse button */
-  margin-right: 8px; /* Spacing from collapse button */
+  margin: 0;
+}
+.cgptx-status-anchor {
+  position: relative;
+}
+#cgptx-sidebar-root[data-mode="expanded"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+}
+#cgptx-sidebar-root[data-mode="expanded"] .cgptx-mini-wrap {
+  width: 100%;
+  gap: 0;
+}
+#cgptx-sidebar-root[data-mode="collapsed"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#cgptx-sidebar-root[data-mode="collapsed"] .cgptx-mini-wrap {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  gap: 0;
+}
+#cgptx-sidebar-root[data-mode="collapsed"] .cgptx-mini-badges-col {
+  left: auto;
+  right: 4px;
+  top: 2px;
 }
 .cgptx-mini-badge {
   font-size: 12px;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   padding: 0;
   border-radius: 50%;
-  text-indent: -9999px; /* Hide text, show only color */
+  text-indent: -9999px;
   border: 1px solid transparent;
   overflow: hidden;
   box-shadow: none;
@@ -35,35 +60,57 @@
 }
 .cgptx-mini-btn-row {
   display: flex;
-  gap: 4px; /* Tighter gap for sidebar */
+  align-items: center;
+  height: 36px;
+  gap: 2px;
+}
+#cgptx-sidebar-root[data-mode="expanded"] .cgptx-mini-btn-row {
+  --cgptx-slot-gap: clamp(2px, calc((100% - 144px) / 5), 12px);
+  width: 100%;
+  justify-content: space-between;
+  gap: 0;
+  padding-inline: var(--cgptx-slot-gap);
 }
 .cgptx-mini-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   border: none;
+  padding: 0;
   cursor: pointer;
   background: transparent;
-  color: #8e8ea0; /* Standard sidebar icon color */
-  box-shadow: none; /* Remove shadow for flat look */
+  color: #8f8f8f;
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px; /* Smaller icon size */
-  transition: all .2s ease;
+  font-size: 16px;
+  line-height: 1;
+  transition: background-color .15s ease, color .15s ease;
 }
 .cgptx-mini-btn:hover {
-  background: rgba(255, 255, 255, 0.1); /* Ghost hover effect */
-  color: #d9d9e3;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e8e8;
   transform: none;
   box-shadow: none;
   border-color: transparent;
+}
+.cgptx-mini-btn:focus-visible {
+  outline: 2px solid #6ea8fe;
+  outline-offset: -2px;
 }
 .cgptx-mini-btn:disabled {
   opacity: .6;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+html.light .cgptx-mini-btn {
+  color: #6b7280;
+}
+html.light .cgptx-mini-btn:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: #111827;
 }
 .cgptx-modal {
   position: fixed;
@@ -352,11 +399,19 @@
 }
 /* StatusPanel Styles */
 .cgptx-mini-badges-col {
-  display: flex; 
-  flex-direction: row; /* Horizontal status layout */
-  gap: 4px; 
-  margin-bottom: 0; 
+  position: absolute;
+  top: 2px;
+  left: -17px;
+  right: auto;
+  z-index: 2;
+  display: flex;
+  flex-direction: row;
   align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  gap: 0;
+  margin-bottom: 0;
 }
 
 .cgptx-mini-badge.info {
