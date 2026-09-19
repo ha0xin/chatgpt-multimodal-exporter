@@ -5,7 +5,7 @@
 ChatGPT Multimodal Exporter is a Tampermonkey/Violentmonkey userscript that extends the ChatGPT web app with export capabilities. The script allows users to export conversation JSON data and download multimodal resources including user-uploaded attachments, images, voice mode recordings, sandbox(code interpreter) files.
 
 <div align="center">
-<img width="400" alt="ChatGPT Multimodal Exporter" src="https://github.com/user-attachments/assets/55fc1376-3e36-433c-980c-c861b1cce2dd" />
+<img width="400" alt="ChatGPT Multimodal Exporter" src="https://github.com/user-attachments/assets/5fc1376-3e36-433c-980c-c861b1cce2dd" />
 </div>
 
 ## Key Features
@@ -45,7 +45,7 @@ pnpm dev
 pnpm build
 ```
 
-The output file will be located at `dist/chatgpt-multimodal-exporter.user.js`.
+This runs TypeScript checks (`tsc`) and produces the production userscript at `dist/chatgpt-multimodal-exporter.user.js`.
  You can install it manually.
 
 ## Usage Guide
