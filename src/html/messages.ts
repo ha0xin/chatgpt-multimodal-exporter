@@ -1,21 +1,25 @@
-import { marked } from 'marked';
-
 import { pointerToFileId } from '../utils';
 import { sanitizeHtmlContent } from './sanitize';
-import {
-    escapeHtml,
-    getFaviconUrl,
-    getHostname,
-    getThoughtsText,
-    normalizeListIndentation,
-    stripChatgptUtm
-} from './utils';
+import { createMarkdownRenderer } from './rendering/markdown';
+import { normalizeParts } from './rendering/normalization';
+import { escapeHtml, getThoughtsText } from './utils';
+import type {
+    AssetPointer,
+    MarkdownPart,
+    RenderablePart,
+    RenderOptions
+} from './rendering/types';
 import type {
     CanvasState,
     ExportedAttachment,
     RenderedAttachment,
     RenderedMessage
 } from './types';
+
+const markdownRenderer = createMarkdownRenderer({ debugRender: false });
+const normalizeOptions: RenderOptions = {
+    skipContentTypes: ['tether_browsing_display' as any]
+};
 
 function isImageFile(name: string, mime?: string): boolean {
     if (mime && mime.startsWith('image/')) return true;
@@ -25,6 +29,15 @@ function isImageFile(name: string, mime?: string): boolean {
 function findExportedAttachment(allAttachments: ExportedAttachment[], key: string): ExportedAttachment | undefined {
     return allAttachments.find((att) =>
         att.file_id === key || att.id === key || att.pointer === key
+    );
+}
+
+function getAttachmentByPointer(pointer: AssetPointer, allAttachments: ExportedAttachment[]): ExportedAttachment | undefined {
+    const fileId = pointerToFileId(pointer.value).replace('sediment://', '');
+    return (
+        findExportedAttachment(allAttachments, fileId) ||
+        findExportedAttachment(allAttachments, pointer.value) ||
+        findExportedAttachment(allAttachments, pointer.value.replace('sediment://', ''))
     );
 }
 
@@ -106,303 +119,160 @@ function collectMessageAttachments(
     return out;
 }
 
-function renderCitationLink(url: string, title: string, index: number): string {
-    const cleanedUrl = stripChatgptUtm(url);
-    return `<a href="${escapeHtml(cleanedUrl)}" target="_blank" title="${escapeHtml(title || '')}" style="color: #10a37f; text-decoration: none; font-size: 0.8em; margin: 0 2px; background: #e0f7fa; padding: 2px 5px; border-radius: 4px;">[${index}]</a>`;
-}
-
-function applyCanvasUpdates(baseContent: string, updates: any[]): string {
-    let updated = baseContent;
-    for (const update of updates) {
-        const pattern = typeof update?.pattern === 'string' ? update.pattern : '';
-        if (!pattern) continue;
-        const replacement = typeof update?.replacement === 'string' ? update.replacement : '';
-        try {
-            const regex = new RegExp(pattern, 'g');
-            updated = updated.replace(regex, replacement);
-        } catch (e) {
-            if (typeof console !== 'undefined' && console.debug) {
-                console.debug('Invalid canvas update pattern', pattern, e);
-            }
-        }
+function renderMarkdownPart(part: MarkdownPart, role: string): string {
+    if (role === 'user') {
+        return escapeHtml(part.markdown).replace(/\n/g, '<br/>');
     }
-    return updated;
+    return markdownRenderer(part);
 }
 
-function renderCanvasBlock(title: string, content: string): string {
-    return `
-    <div class="canvas-block">
-        <div class="canvas-header">
-            <span>${escapeHtml(title)}</span>
-            <span class="canvas-badge">HTML</span>
-        </div>
-        <div class="canvas-body">
-            ${marked.parse('```html\n' + content + '\n```')}
-        </div>
-    </div>`;
+function extractRecapLabel(payload: unknown): string {
+    if (!payload || typeof payload !== 'object') return '';
+    const content = payload as { content?: unknown; text?: unknown; parts?: unknown };
+    if (typeof content.content === 'string') return content.content;
+    if (typeof content.text === 'string') return content.text;
+    if (Array.isArray(content.parts)) {
+        return content.parts
+            .map((part) => {
+                if (typeof part === 'string') return part;
+                if (part && typeof part === 'object' && 'text' in part) {
+                    const text = (part as { text?: unknown }).text;
+                    return typeof text === 'string' ? text : '';
+                }
+                return '';
+            })
+            .filter(Boolean)
+            .join(' ');
+    }
+    return '';
+}
+
+function renderAssetPointer(
+    pointer: AssetPointer,
+    allAttachments: ExportedAttachment[],
+    inlineKeys: Set<string>
+): string {
+    const found = getAttachmentByPointer(pointer, allAttachments);
+    if (found) {
+        const key = pointerToFileId(pointer.value).replace('sediment://', '');
+        const filename = found.saved_as || found.name || 'attachment';
+        const originalName = found.original_name || found.name || filename;
+        const relPath = `attachments/${filename}`;
+        inlineKeys.add(pointer.value);
+        inlineKeys.add(key);
+        inlineKeys.add(relPath);
+
+        const mime = found.mime || '';
+        if (isImageFile(filename, mime)) {
+            return `<img src="${escapeHtml(relPath)}" alt="${escapeHtml(originalName)}" loading="lazy" />`;
+        }
+        return `<a href="${escapeHtml(relPath)}" download="${escapeHtml(filename)}" class="file-attachment">📎 ${escapeHtml(originalName)}</a>`;
+    }
+
+    if (pointer.value.startsWith('data:image/')) {
+        return `<img src="${escapeHtml(pointer.value)}" alt="inline image" loading="lazy" />`;
+    }
+
+    if (pointer.isCdnPrefixed) {
+        return `<img src="${escapeHtml(pointer.value)}" alt="${escapeHtml(pointer.pointerType)}" loading="lazy" />`;
+    }
+
+    return `<div class="asset-placeholder" data-pointer="${escapeHtml(pointer.value)}">asset: ${escapeHtml(pointer.pointerType)}</div>`;
+}
+
+function renderPart(
+    part: RenderablePart,
+    role: string,
+    allAttachments: ExportedAttachment[],
+    inlineKeys: Set<string>
+): string {
+    switch (part.kind) {
+        case 'markdown':
+            return renderMarkdownPart(part, role);
+        case 'code': {
+            const language = part.language ? ` class="language-${escapeHtml(part.language)}"` : '';
+            return `<pre><code${language}>${escapeHtml(part.text)}</code></pre>`;
+        }
+        case 'execution_output':
+            return `<pre class="tool-output">${escapeHtml(part.text)}</pre>`;
+        case 'tool_call': {
+            const title = escapeHtml(part.name || 'tool_call');
+            const body = part.text ? `: ${escapeHtml(part.text)}` : '';
+            return `<div class="tool-call"><strong>${title}</strong>${body}</div>`;
+        }
+        case 'asset_pointer':
+            return renderAssetPointer(part.pointer, allAttachments, inlineKeys);
+        case 'reasoning_recap': {
+            const label = extractRecapLabel(part.payload) || '已思考';
+            return `<details class="reasoning-recap"><summary>${escapeHtml(label)}</summary></details>`;
+        }
+        case 'structured_thoughts':
+        case 'report':
+        case 'canvas':
+        case 'sonic_webpage':
+        case 'developer_content':
+        case 'system_content':
+        case 'user_editable_context':
+        case 'model_editable_context':
+            return `<pre class="unknown-part">${escapeHtml(JSON.stringify(part.payload, null, 2))}</pre>`;
+        case 'unknown':
+        default:
+            return `<pre class="unknown-part">${escapeHtml(JSON.stringify((part as any).payload ?? part, null, 2))}</pre>`;
+    }
+}
+
+function stringifyPartForRaw(part: RenderablePart, allAttachments: ExportedAttachment[]): string {
+    switch (part.kind) {
+        case 'markdown':
+            return part.markdown;
+        case 'code':
+        case 'execution_output':
+            return part.text;
+        case 'tool_call':
+            return part.text || part.name;
+        case 'asset_pointer': {
+            const found = getAttachmentByPointer(part.pointer, allAttachments);
+            if (!found) return part.pointer.value;
+            const filename = found.saved_as || found.name || 'attachment';
+            const name = found.original_name || found.name || filename;
+            const relPath = `attachments/${filename}`;
+            const mime = found.mime || '';
+            if (isImageFile(filename, mime)) return `![${name}](${relPath})`;
+            return `[${name}](${relPath})`;
+        }
+        case 'reasoning_recap':
+            return extractRecapLabel(part.payload);
+        case 'structured_thoughts':
+            return getThoughtsText((part as any).payload);
+        default:
+            return JSON.stringify((part as any).payload ?? part);
+    }
 }
 
 export function getRawMessageText(msg: any, allAttachments: ExportedAttachment[]): string {
     if (!msg?.content) return '';
-    const contentType = msg.content.content_type;
-    if (contentType === 'thoughts') return getThoughtsText(msg.content);
-    if (contentType === 'reasoning_recap') return String(msg.content.content || '');
-    let textContent = '';
-    if (contentType === 'text' && msg.content.parts) {
-        textContent = msg.content.parts.join('\n');
-    } else if (contentType === 'multimodal_text' && msg.content.parts) {
-        for (const part of msg.content.parts) {
-            if (typeof part === 'string') {
-                textContent += part + '\n';
-            } else if (part.asset_pointer) {
-                const fileId = part.asset_pointer.replace('sediment://', '');
-                const found = allAttachments.find(a => (a.file_id === fileId || a.id === fileId));
-                if (found) {
-                    const filename = found.saved_as || found.name || 'image.png';
-                    const originalName = found.original_name || found.name || 'Image';
-                    const relPath = `attachments/${filename}`;
-                    textContent += `\n![${originalName}](${relPath})\n`;
-                }
-            }
-        }
-    } else if (typeof msg.content.text === 'string') {
-        textContent = msg.content.text;
-    } else if (Array.isArray(msg.content.parts)) {
-        textContent = msg.content.parts.map((part: any) => typeof part === 'string' ? part : '').join('\n');
-    } else if (typeof msg.content.content === 'string') {
-        textContent = msg.content.content;
-    }
-    return textContent;
+    const parts = normalizeParts(msg, normalizeOptions);
+    return parts
+        .map((part) => stringifyPartForRaw(part, allAttachments))
+        .filter((text) => typeof text === 'string' && text.trim() !== '')
+        .join('\n\n');
 }
 
-export function renderMessage(msg: any, allAttachments: ExportedAttachment[], canvasState: CanvasState): RenderedMessage {
-    const role = msg.author.role;
-    let textContent = '';
-    const inlineAttachmentKeys = new Set<string>();
-    const userImageItems: { url: string; name: string }[] = [];
+export function renderMessage(msg: any, allAttachments: ExportedAttachment[], _canvasState: CanvasState): RenderedMessage {
+    const role = msg.author?.role || 'assistant';
+    const normalizedParts = normalizeParts(msg, normalizeOptions);
+    const inlineKeys = new Set<string>();
+    const textContent = normalizedParts.map((part) => stringifyPartForRaw(part, allAttachments)).join('\n');
+    const attachments = collectMessageAttachments(msg, allAttachments, textContent, inlineKeys);
 
-    if (msg.content) {
-        if (msg.content.content_type === 'text' && msg.content.parts) {
-            textContent = msg.content.parts.join('\n');
-        } else if (msg.content.content_type === 'text' && typeof msg.content.text === 'string') {
-            textContent = msg.content.text;
-        } else if (msg.content.content_type === 'multimodal_text' && msg.content.parts) {
-            for (const part of msg.content.parts) {
-                if (typeof part === 'string') {
-                    textContent += part + '\n';
-                } else if (part.asset_pointer) {
-                    const fileId = part.asset_pointer.replace('sediment://', '');
-                    const found = allAttachments.find(a => (a.file_id === fileId || a.id === fileId));
-                    if (found) {
-                        const filename = found.saved_as || found.name || 'image.png';
-                        const originalName = found.original_name || found.name || 'Image';
-                        const relPath = `attachments/${filename}`;
-                        inlineAttachmentKeys.add(fileId);
-                        inlineAttachmentKeys.add(relPath);
-                        if (role === 'user') {
-                            userImageItems.push({ url: relPath, name: originalName });
-                        } else {
-                            textContent += `\n![${escapeHtml(originalName)}](${relPath})\n`;
-                        }
-                    }
-                }
-            }
-            if (role === 'user' && userImageItems.length > 0) {
-                const carouselItems = userImageItems.map((img) =>
-                    `<div class="image-card"><img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.name)}" loading="lazy" /></div>`
-                ).join('');
-                const carouselHtml = `\n<div class="image-carousel user-images">${carouselItems}</div>\n`;
-                textContent += carouselHtml;
-            }
-        }
-    }
-
-    const attachments = collectMessageAttachments(msg, allAttachments, textContent, inlineAttachmentKeys);
-
-    if (msg.metadata?.content_references) {
-        const refs = [...msg.metadata.content_references].sort((a: any, b: any) => b.start_idx - a.start_idx);
-
-        for (const ref of refs) {
-            if (ref.type === 'image_group' && ref.images) {
-                const carouselItems = ref.images.map((img: any) => {
-                    const imgUrl = img.image_result?.content_url || img.image_result?.url;
-                    if (!imgUrl) return '';
-                    const pageUrl = stripChatgptUtm(img.image_result?.url || '');
-                    const title = img.image_result?.title || (pageUrl ? getHostname(pageUrl) : 'Image');
-                    const favicon = pageUrl ? getFaviconUrl(pageUrl) : '';
-                    const sourceHtml = pageUrl ? `<a class="image-source" href="${escapeHtml(pageUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}">
-                            ${favicon ? `<img src="${escapeHtml(favicon)}" alt="" aria-hidden="true" onerror="this.style.display='none';" />` : ''}
-                            <span>${escapeHtml(title)}</span>
-                        </a>` : '';
-                    return `<div class="image-card"><img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(title)}" loading="lazy" />${sourceHtml}</div>`;
-                }).join('');
-                const carouselHtml = `\n<div class="image-carousel">${carouselItems}</div>\n`;
-
-                if (textContent.includes(ref.matched_text)) {
-                    textContent = textContent.replace(ref.matched_text, carouselHtml);
-                }
-            }
-
-            if (ref.type === 'webpage' || ref.type === 'webpage_extended') {
-                if (textContent.includes(ref.matched_text)) {
-                    const index = msg.metadata.content_references.indexOf(ref) + 1;
-                    const url = stripChatgptUtm(ref.url || '');
-                    if (url) {
-                        const citationHtml = renderCitationLink(url, ref.title || '', index);
-                        textContent = textContent.replace(ref.matched_text, citationHtml);
-                    } else {
-                        textContent = textContent.replace(ref.matched_text, '');
-                    }
-                }
-            }
-
-            if (ref.type === 'grouped_webpages') {
-                if (textContent.includes(ref.matched_text)) {
-                    const items = Array.isArray(ref.items) ? ref.items : [];
-                    const url = stripChatgptUtm(items[0]?.url || ref.safe_urls?.[0] || '');
-                    const title = items[0]?.title || ref.alt || url;
-                    const index = msg.metadata.content_references.indexOf(ref) + 1;
-                    if (url) {
-                        const citationHtml = renderCitationLink(url, title || '', index);
-                        textContent = textContent.replace(ref.matched_text, citationHtml);
-                    } else {
-                        textContent = textContent.replace(ref.matched_text, '');
-                    }
-                }
-            }
-
-            if (ref.type === 'file') {
-                if (textContent.includes(ref.matched_text)) {
-                    const fileHtml = `<span title="${escapeHtml(ref.name || 'File')}" style="color: #555; font-size: 0.8em; margin: 0 2px; background: #f0f0f0; padding: 2px 5px; border-radius: 4px; border: 1px solid #ddd;">[File: ${escapeHtml(ref.name || 'Attachment')}]</span>`;
-                    textContent = textContent.replace(ref.matched_text, fileHtml);
-                }
-            }
-        }
-    }
-
-    if (role === 'tool' && msg.content?.content_type === 'multimodal_text') {
-        const parts = msg.content.parts || [];
-        for (const part of parts) {
-            if (part.asset_pointer) {
-                const fileId = part.asset_pointer.replace('sediment://', '');
-                const found = allAttachments.find(a => (a.file_id === fileId || a.id === fileId));
-                if (found) {
-                    const filename = found.saved_as || found.name || 'image.png';
-                    const originalName = found.original_name || found.name || 'Generated Image';
-                    const relPath = `attachments/${filename}`;
-                    return {
-                        role: 'assistant',
-                        htmlContent: `<div style="text-align:center; margin: 20px 0;"><img src="${relPath}" alt="${escapeHtml(originalName)}" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" /></div>`,
-                        modelSlug: msg.metadata?.model_slug,
-                        attachments
-                    };
-                }
-            }
-        }
-    }
-
-    if (role === 'assistant' && textContent.trim().startsWith('{') && textContent.includes('"referenced_image_ids":')) {
-        try {
-            const json = JSON.parse(textContent);
-            if (json.prompt) {
-                const promptHtml = `<div style="font-size: 0.9em; color: #666; font-style: italic;">
-                    Generative Prompt: "${escapeHtml(json.prompt)}"
-                </div>`;
-                return {
-                    role: 'assistant',
-                    htmlContent: promptHtml,
-                    modelSlug: msg.metadata?.model_slug,
-                    attachments
-                };
-            }
-        } catch (e) {
-        }
-    }
-
-    if (msg.content?.content_type === 'thoughts') {
-        const thoughts = getThoughtsText(msg.content);
-        const html = `
-        <details style="margin-bottom: 10px; border: 1px solid #ddd; border-radius: 8px; padding: 10px;">
-            <summary style="cursor: pointer; font-weight: bold; color: #666;">Reasoning Process</summary>
-            <div style="margin-top: 10px; color: #444; white-space: pre-wrap; font-family: monospace; font-size: 0.9em;">${escapeHtml(thoughts)}</div>
-        </details>`;
-        return {
-            role,
-            htmlContent: html,
-            modelSlug: msg.metadata?.model_slug,
-            attachments
-        };
-    }
-
-    if (msg.content?.content_type === 'reasoning_recap') {
-        return {
-            role,
-            htmlContent: `<div style="font-size: 0.85em; color: #888; margin-bottom: 5px;">${escapeHtml(msg.content.content || '')}</div>`,
-            modelSlug: msg.metadata?.model_slug,
-            attachments
-        };
-    }
-
-    if (role === 'assistant' && textContent.trim().startsWith('{')) {
-        try {
-            const json = JSON.parse(textContent);
-            if (json.name && json.type === 'code/html' && json.content) {
-                const name = String(json.name);
-                const content = String(json.content);
-                canvasState.byName[name] = content;
-                canvasState.lastName = name;
-                canvasState.lastContent = content;
-                const canvasHtml = renderCanvasBlock(`Canvas: ${name}`, content);
-                return {
-                    role,
-                    htmlContent: canvasHtml,
-                    modelSlug: msg.metadata?.model_slug,
-                    attachments
-                };
-            }
-            if (json.updates && Array.isArray(json.updates)) {
-                const baseName = canvasState.lastName;
-                const baseContent = baseName ? canvasState.byName[baseName] : canvasState.lastContent;
-                if (baseContent) {
-                    const updatedContent = applyCanvasUpdates(baseContent, json.updates);
-                    if (baseName) {
-                        canvasState.byName[baseName] = updatedContent;
-                    }
-                    canvasState.lastContent = updatedContent;
-                    const title = baseName ? `Canvas Updated: ${baseName}` : 'Canvas Updated';
-                    return {
-                        role,
-                        htmlContent: renderCanvasBlock(title, updatedContent),
-                        modelSlug: msg.metadata?.model_slug,
-                        attachments
-                    };
-                }
-                const updatesHtml = `
-                 <div class="canvas-update-block" style="border: 1px solid #e0e0e0; border-radius: 8px; margin: 10px 0; background: #fafafa;">
-                    <div style="padding: 8px 12px; color: #666; font-size: 0.9em;">
-                        <strong>Canvas Updated</strong>
-                    </div>
-                    <div style="padding: 10px; font-family: monospace; font-size: 0.85em; overflow-x: auto;">
-                        ${json.updates.map((u: any) => `<div><span style="color: #d32f2f;">- ${escapeHtml(u.pattern || '')}</span><br><span style="color: #388e3c;">+ ${escapeHtml(u.replacement || '')}</span></div>`).join('<hr style="margin: 5px 0; border: 0; border-top: 1px dashed #ccc;">')}
-                    </div>
-                 </div>`;
-                return {
-                    role,
-                    htmlContent: updatesHtml,
-                    modelSlug: msg.metadata?.model_slug,
-                    attachments
-                };
-            }
-        } catch (e) {
-        }
-    }
-
-    const rawHtml = marked.parse(normalizeListIndentation(textContent), { async: false }) as string;
-    const htmlContent = sanitizeHtmlContent(rawHtml);
+    const htmlContent = normalizedParts
+        .map((part) => renderPart(part, role, allAttachments, inlineKeys))
+        .filter(Boolean)
+        .join('');
 
     return {
         role,
-        htmlContent,
+        htmlContent: sanitizeHtmlContent(htmlContent),
         modelSlug: msg.metadata?.model_slug,
         attachments
     };

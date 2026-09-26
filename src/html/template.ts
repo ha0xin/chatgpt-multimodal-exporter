@@ -26,6 +26,8 @@ export function renderHtmlDocument(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(title)}</title>
     <style>
+        @import url('https://cdn.jsdelivr.net/npm/katex@0.16.33/dist/katex.min.css');
+
         :root {
             --bg-color: #ffffff;
             --text-color: #0d0d0d;
@@ -322,6 +324,94 @@ export function renderHtmlDocument(
             margin: 0;
             padding-left: 16px;
             color: #777;
+        }
+
+        .tool-output {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--bg-color) 92%, #000 8%);
+        }
+
+        .tool-call {
+            font-size: 0.9em;
+            color: color-mix(in srgb, var(--text-color) 88%, #666 12%);
+            margin: 8px 0;
+        }
+
+        .asset-placeholder {
+            border: 1px dashed var(--border-color);
+            border-radius: 10px;
+            padding: 8px 10px;
+            color: #888;
+            font-size: 0.85em;
+            display: inline-block;
+        }
+
+        .unknown-part {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: color-mix(in srgb, var(--bg-color) 96%, #000 4%);
+            white-space: pre-wrap;
+        }
+
+        .reasoning-recap {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 4px 10px;
+            margin: 8px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .reasoning-recap > summary {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .citation-pill-wrap {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 4px;
+            vertical-align: text-top;
+        }
+
+        .citation-pill {
+            display: inline-flex;
+            align-items: center;
+            max-width: 180px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #f4f4f4;
+            color: #4a4a4a;
+            text-decoration: none;
+            font-size: 0.72em;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .agent-citation {
+            font-size: 0.75em;
+            margin-left: 2px;
+            color: #666;
+        }
+
+        .agent-citation-text {
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .citation-pill {
+                background: #303030;
+                color: #cfcfcf;
+            }
+            .agent-citation {
+                color: #9e9e9e;
+            }
         }
 
         .image-carousel {
