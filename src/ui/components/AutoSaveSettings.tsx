@@ -28,7 +28,7 @@ interface Props {
 
 type SettingsTab = 'general' | 'storage' | 'advanced';
 
-const SETTINGS_ROW_CLASS = 'border-token-border-light flex min-h-15 items-center border-b py-2 last-of-type:border-none';
+const SETTINGS_ROW_CLASS = 'cgptx-settings-row';
 const SETTINGS_TAB_CLASS = 'group __menu-item hoverable gap-1.5 cgptx-settings-tab';
 
 interface ToggleSwitchProps {
@@ -134,9 +134,9 @@ export function AutoSaveSettings({ status, onClose }: Props) {
   };
 
   const renderGeneralTab = () => (
-    <section className="relative">
-      <div className="flex min-h-15 items-center py-3 border-token-border-default border-b">
-        <h3 className="w-full text-lg font-normal">自动保存</h3>
+    <section className="cgptx-settings-section">
+      <div className="cgptx-settings-heading">
+        <h3 className="w-full text-lg font-normal">常规</h3>
       </div>
 
       <div className={SETTINGS_ROW_CLASS}>
@@ -218,8 +218,8 @@ export function AutoSaveSettings({ status, onClose }: Props) {
   );
 
   const renderStorageTab = () => (
-    <section className="relative">
-      <div className="flex min-h-15 items-center py-3 border-token-border-default border-b">
+    <section className="cgptx-settings-section">
+      <div className="cgptx-settings-heading">
         <h3 className="w-full text-lg font-normal">存储</h3>
       </div>
 
@@ -241,8 +241,8 @@ export function AutoSaveSettings({ status, onClose }: Props) {
   );
 
   const renderAdvancedTab = () => (
-    <section className="relative">
-      <div className="flex min-h-15 items-center py-3 border-token-border-default border-b">
+    <section className="cgptx-settings-section">
+      <div className="cgptx-settings-heading">
         <h3 className="w-full text-lg font-normal">高级</h3>
       </div>
 
@@ -327,9 +327,11 @@ export function AutoSaveSettings({ status, onClose }: Props) {
             </div>
 
             <div className={`${CHATGPT_PANEL_CLASS} cgptx-settings-panel`} role="tabpanel">
-              {activeTab === 'general' && renderGeneralTab()}
-              {activeTab === 'storage' && renderStorageTab()}
-              {activeTab === 'advanced' && renderAdvancedTab()}
+              <div className="cgptx-settings-pages">
+                <div aria-hidden={activeTab !== 'general'}>{renderGeneralTab()}</div>
+                <div aria-hidden={activeTab !== 'storage'}>{renderStorageTab()}</div>
+                <div aria-hidden={activeTab !== 'advanced'}>{renderAdvancedTab()}</div>
+              </div>
             </div>
           </div>
         </div>
