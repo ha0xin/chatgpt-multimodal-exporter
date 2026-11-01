@@ -56,8 +56,9 @@ function mountFloatingEntry() {
   const isExpanded = !!(sidebarHeader && isVisible(closeSidebarBtn));
   const openSidebarBtn = findOpenSidebarButton();
   const existingRoot = document.getElementById(SIDEBAR_ROOT_ID);
+  const modernSidebar = document.querySelector('button[aria-label="Toggle sidebar"]');
 
-  if (!isExpanded && !openSidebarBtn) {
+  if (!isExpanded && !openSidebarBtn && !isVisible(modernSidebar)) {
     if (existingRoot) {
       existingRoot.remove();
     }
@@ -65,10 +66,10 @@ function mountFloatingEntry() {
     return;
   }
 
-  const mode = isExpanded ? 'expanded' : 'collapsed';
+  const mode = isExpanded ? 'expanded' : openSidebarBtn ? 'collapsed' : 'fallback';
   const mountParent = (mode === 'expanded'
     ? sidebarHeader
-    : (openSidebarBtn?.parentElement || openSidebarBtn)) as HTMLElement;
+    : mode === 'collapsed' ? (openSidebarBtn?.parentElement || openSidebarBtn) : document.body) as HTMLElement;
 
   if (mode === 'collapsed') {
     setCollapsedAnchor(mountParent);
@@ -103,6 +104,12 @@ function mountFloatingEntry() {
     } else {
       sidebarHeader.appendChild(root);
     }
+    render(h(FloatingEntry, { collapsed: false }), root);
+    return;
+  }
+
+  if (mode === 'fallback') {
+    mountParent.appendChild(root);
     render(h(FloatingEntry, { collapsed: false }), root);
     return;
   }

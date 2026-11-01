@@ -11,6 +11,18 @@
 .cgptx-status-anchor {
   position: relative;
 }
+#cgptx-sidebar-root[data-mode="fallback"] {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483647;
+  padding: 4px 8px;
+  border: 1px solid var(--border-light, #ddd);
+  border-radius: 12px;
+  background: var(--main-surface-primary, #fff);
+  color: var(--text-primary, #0d0d0d);
+  box-shadow: 0 4px 16px #0002;
+}
 #cgptx-sidebar-root[data-mode="expanded"] {
   flex: 1 1 auto;
   min-width: 0;
